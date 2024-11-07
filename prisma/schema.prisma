@@ -1,0 +1,108 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String      @id @default(cuid())
+  email          String      @unique
+  name           String
+  password       String
+  role           String      @default("CLIENT")
+  companyName    String?
+  companyAddress String?
+  contactNumber  String?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  consignees     Consignee[]
+  exporters      Exporter[]
+  shipments      Shipment[]
+
+  @@index([email])
+}
+
+model Consignee {
+  id              String              @id @default(cuid())
+  name            String
+  registeredName  String
+  businessAddress String
+  tin             String              @unique
+  brn             String
+  contactPerson   String
+  contactNumber   String
+  email           String
+  isActive        Boolean             @default(true)
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  userId          String
+  createdBy       User                @relation(fields: [userId], references: [id])
+  documents       ConsigneeDocument[]
+  shipments       Shipment[]
+
+  @@index([name, tin])
+  @@index([userId])
+}
+
+model ConsigneeDocument {
+  id          String    @id @default(cuid())
+  consigneeId String
+  name        String
+  fileUrl     String
+  uploadedAt  DateTime  @default(now())
+  expiryDate  DateTime?
+  isVerified  Boolean   @default(false)
+  consignee   Consignee @relation(fields: [consigneeId], references: [id])
+
+  @@index([consigneeId])
+}
+
+model Exporter {
+  id              String     @id @default(cuid())
+  name            String
+  businessAddress String
+  contactPerson   String
+  email           String
+  contactNumber   String
+  isActive        Boolean    @default(true)
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+  userId          String
+  createdBy       User       @relation(fields: [userId], references: [id])
+  shipments       Shipment[]
+
+  @@index([name])
+  @@index([userId])
+}
+
+model Shipment {
+  id                   String     @id @default(uuid())
+  referenceNumber      String     @unique
+  freightType          String
+  status               String
+  consigneeId          String?
+  exporterId           String?
+  userId               String
+  consigneeData        String
+  exporterData         String
+  shipmentDetails      String
+  documentsData        String
+  computations         String?
+  timelineData         String
+  notesData            String
+  cargoData            String?    @default("[]")
+  statementOfFactsData String?    @default("[]")
+  createdAt            DateTime   @default(now())
+  updatedAt            DateTime   @updatedAt
+  completionDate       DateTime?
+  isLocked             Boolean    @default(false)
+  consignee            Consignee? @relation(fields: [consigneeId], references: [id])
+  exporter             Exporter?  @relation(fields: [exporterId], references: [id])
+  createdBy            User       @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([consigneeId, exporterId])
+}
