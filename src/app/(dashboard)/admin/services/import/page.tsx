@@ -136,7 +136,7 @@ const ImportClearancePage = () => {
             );
 
             return (
-              <TableRow key={shipment.id}>
+              (<TableRow key={shipment.id}>
                 <TableCell className="font-medium">
                   {shipment.referenceNumber}
                 </TableCell>
@@ -209,7 +209,7 @@ const ImportClearancePage = () => {
                     )}
                   </div>
                 </TableCell>
-              </TableRow>
+              </TableRow>)
             );
           })}
       </TableBody>

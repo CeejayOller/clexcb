@@ -1,7 +1,7 @@
 "use client";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
-import Image from "next/image";
+import Image from "next/legacy/image";
 
 interface CardDemoProps {
   title: string;
