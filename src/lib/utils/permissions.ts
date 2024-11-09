@@ -1,18 +1,29 @@
 // src/lib/utils/permissions.ts
-import { User, USER_ROLES, ROLE_PERMISSIONS, type PermissionKey } from '@/types/auth';
+import {
+  User,
+  USER_ROLES,
+  ROLE_PERMISSIONS,
+  type PermissionKey,
+} from "@/types/auth";
 
-export function checkPermission(user: User | null, permission: PermissionKey): boolean {
+export function checkPermission(
+  user: User | null,
+  permission: PermissionKey
+): boolean {
   if (!user) return false;
   return ROLE_PERMISSIONS[user.role][permission] || false;
 }
 
-export function getResourcePermissions(user: User | null, resourceUserId?: string) {
+export function getResourcePermissions(
+  user: User | null,
+  resourceUserId?: string
+) {
   if (!user) {
     return {
       canView: false,
       canEdit: false,
       canDelete: false,
-      canCreate: false
+      canCreate: false,
     };
   }
 
@@ -22,7 +33,7 @@ export function getResourcePermissions(user: User | null, resourceUserId?: strin
       canView: true,
       canEdit: true,
       canDelete: true,
-      canCreate: true
+      canCreate: true,
     };
   }
 
@@ -33,7 +44,7 @@ export function getResourcePermissions(user: User | null, resourceUserId?: strin
       canView: true, // Brokers can view all
       canEdit: isOwn, // Can only edit own resources
       canDelete: isOwn, // Can only delete own resources
-      canCreate: true // Can create new resources
+      canCreate: true, // Can create new resources
     };
   }
 
@@ -44,7 +55,7 @@ export function getResourcePermissions(user: User | null, resourceUserId?: strin
       canView: isOwn,
       canEdit: isOwn,
       canDelete: false,
-      canCreate: false
+      canCreate: false,
     };
   }
 
@@ -52,7 +63,7 @@ export function getResourcePermissions(user: User | null, resourceUserId?: strin
     canView: false,
     canEdit: false,
     canDelete: false,
-    canCreate: false
+    canCreate: false,
   };
 }
 
@@ -63,13 +74,13 @@ export function canAccessRoute(user: User | null, route: string): boolean {
   if (user.role === USER_ROLES.SUPERADMIN) return true;
 
   // Check admin routes
-  if (route.startsWith('/admin')) {
-    return checkPermission(user, 'canAccessAdmin');
+  if (route.startsWith("/admin")) {
+    return checkPermission(user, "canAccessAdmin");
   }
 
   // Check client routes
-  if (route.startsWith('/client')) {
-    return checkPermission(user, 'canAccessClient');
+  if (route.startsWith("/client")) {
+    return checkPermission(user, "canAccessClient");
   }
 
   // Public routes
@@ -85,9 +96,9 @@ export function filterUserAccessibleData<T extends { userId: string }>(
   }
 
   if (user.role === USER_ROLES.BROKER) {
-    return data.filter(item => item.userId === user.id);
+    return data.filter((item) => item.userId === user.id);
   }
 
   // Clients can only see their own data
-  return data.filter(item => item.userId === user.id);
+  return data.filter((item) => item.userId === user.id);
 }

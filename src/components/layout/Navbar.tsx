@@ -1,16 +1,16 @@
 // src/components/layout/Navbar.tsx
-'use client';
+"use client";
 
-import { useState } from 'react';
-import Link from 'next/link';
+import { useState } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { Menu, X } from 'lucide-react';
+import { Menu, X } from "lucide-react";
 
 export default function Navbar() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   return (
-    <nav className="bg-white fixed w-full z-10 shadow-sm">
+    <nav className="bg-white fixed w-full z-50 shadow-sm ">
       <div className="max-w-7xl mx-auto px-4">
         <div className="flex justify-between h-16">
           <div className="flex">
@@ -21,7 +21,10 @@ export default function Navbar() {
 
           {/* Desktop Navigation */}
           <div className="hidden md:flex items-center space-x-8">
-            <Link href="/#services" className="text-gray-600 hover:text-gray-900">
+            <Link
+              href="/#services"
+              className="text-gray-600 hover:text-gray-900"
+            >
               Services
             </Link>
             <Link href="/#about" className="text-gray-600 hover:text-gray-900">
@@ -87,7 +90,13 @@ export default function Navbar() {
 }
 
 // Service Card Component
-function ServiceCard({ title, description }: { title: string; description: string }) {
+function ServiceCard({
+  title,
+  description,
+}: {
+  title: string;
+  description: string;
+}) {
   return (
     <div className="bg-white p-6 rounded-lg shadow-md">
       <h3 className="text-xl font-semibold mb-4">{title}</h3>
