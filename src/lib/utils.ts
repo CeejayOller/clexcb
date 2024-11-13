@@ -1,11 +1,14 @@
-import { type ClassValue, clsx } from "clsx"
-import { twMerge } from "tailwind-merge"
+import { type ClassValue, clsx } from "clsx";
+import { twMerge } from "tailwind-merge";
 
 export function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs))
+  return twMerge(clsx(inputs));
 }
 
-export async function generateNewReference(type: string, year: string): Promise<string> {
+export async function generateNewReference(
+  type: string,
+  year: string
+): Promise<string> {
   // Implementation...
-  return `CLEX-${type}${year}-0001`
+  return `CLEX-${type}${year}-0001`;
 }
