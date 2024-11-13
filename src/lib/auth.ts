@@ -39,7 +39,10 @@ export async function validateSession(): Promise<Session | null> {
   const cookieStore = await cookies();
   const session = cookieStore.get("session");
 
+  console.log("Current session cookie:", session); // Debug log
+
   if (!session?.value) {
+    console.log("No session cookie found"); // Debug log
     return null;
   }
 
@@ -49,32 +52,34 @@ export async function validateSession(): Promise<Session | null> {
       new TextEncoder().encode(JWT_SECRET)
     );
 
+    console.log("JWT payload:", payload); // Debug log
+
     const user = await prisma.user.findUnique({
       where: { id: payload.userId as string },
     });
 
+    console.log("Found user:", user); // Debug log
+
     if (!user) return null;
 
-    // Validate that the role is a valid UserRole
     if (!Object.values(USER_ROLES).includes(user.role as UserRole)) {
+      console.log("Invalid role:", user.role); // Debug log
       return null;
     }
-
-    // Cast the role to UserRole since we've validated it
-    const userRole = user.role as UserRole;
 
     return {
       user: {
         id: user.id,
         email: user.email,
         name: user.name,
-        role: userRole,
+        role: user.role as UserRole,
         companyName: user.companyName || undefined,
         companyAddress: user.companyAddress || undefined,
         contactNumber: user.contactNumber || undefined,
       },
     };
-  } catch {
+  } catch (error) {
+    console.error("Session validation error:", error);
     return null;
   }
 }

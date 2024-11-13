@@ -3,8 +3,10 @@
 
 import { prisma } from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
-import { getServerSession } from 'next-auth/next'
 import type { Session } from '@/types/auth'
+import { validateSession } from '@/lib/auth'
+import { USER_ROLES } from '@/types/auth'
+
 
 // Response type
 interface ActionResponse<T> {
@@ -93,11 +95,11 @@ export async function handleEntityUpdateAction() {
     revalidatePath('/admin/clients/[type]/[id]')
   }
 
-export async function createConsignee(data: ConsigneeFormData) {
+  export async function createConsignee(data: ConsigneeFormData) {
     try {
-      const session = await getServerSession() as Session | null;
+      const session = await validateSession()
       if (!session?.user) {
-        throw new Error('Unauthorized');
+        return { error: 'Unauthorized' }
       }
   
       const existingConsignee = await prisma.consignee.findFirst({
@@ -106,7 +108,7 @@ export async function createConsignee(data: ConsigneeFormData) {
             { tin: data.tin },
             { name: data.name }
           ],
-          createdBy: {  // This references the User relation in your schema
+          createdBy: {
             id: session.user.id
           }
         }
@@ -121,11 +123,7 @@ export async function createConsignee(data: ConsigneeFormData) {
       const consignee = await prisma.consignee.create({
         data: {
           ...data,
-          createdBy: {  // This is how we connect to the User model
-            connect: {
-              id: session.user.id
-            }
-          }
+          userId: session.user.id  // Connect to user
         }
       })
   
@@ -137,11 +135,11 @@ export async function createConsignee(data: ConsigneeFormData) {
     }
   }
   
-export async function createExporter(data: ExporterFormData) {
+  export async function createExporter(data: ExporterFormData) {
     try {
-      const session = await getServerSession() as Session | null;
+      const session = await validateSession()
       if (!session?.user) {
-        throw new Error('Unauthorized');
+        return { error: 'Unauthorized' }
       }
   
       const existingExporter = await prisma.exporter.findFirst({
@@ -150,7 +148,7 @@ export async function createExporter(data: ExporterFormData) {
             { email: data.email },
             { name: data.name }
           ],
-          createdBy: {  // This references the User relation in your schema
+          createdBy: {
             id: session.user.id
           }
         }
@@ -165,11 +163,7 @@ export async function createExporter(data: ExporterFormData) {
       const exporter = await prisma.exporter.create({
         data: {
           ...data,
-          createdBy: {  // This is how we connect to the User model
-            connect: {
-              id: session.user.id
-            }
-          }
+          userId: session.user.id  // Connect to user
         }
       })
   
@@ -183,33 +177,32 @@ export async function createExporter(data: ExporterFormData) {
   
   export async function getConsignees(query?: string) {
     try {
-      const session = await getServerSession() as Session | null;
+      const session = await validateSession()
       if (!session?.user) {
-        throw new Error('Unauthorized');
+        return { error: 'Unauthorized' }
       }
   
+      // Only CLIENT role should be restricted
+      if (session.user.role === USER_ROLES.CLIENT) {
+        return { error: 'Unauthorized access' }
+      }
+  
+      // Remove userId filtering for BROKER and SUPERADMIN
       const consignees = await prisma.consignee.findMany({
         where: query ? {
-          AND: [
-            {
-              OR: [
-                { name: { contains: query } },
-                { tin: { contains: query } }
-              ]
-            },
-            {
-              createdBy: {  // Reference the User relation
-                id: session.user.id
-              }
-            }
+          OR: [
+            { name: { contains: query, mode: 'insensitive' } },
+            { tin: { contains: query, mode: 'insensitive' } }
           ]
-        } : {
-          createdBy: {
-            id: session.user.id
-          }
-        },
-        orderBy: { name: 'asc' },
+        } : {},
         include: {
+          createdBy: {
+            select: {
+              id: true,
+              name: true,
+              email: true
+            }
+          },
           documents: true,
           shipments: {
             select: {
@@ -218,9 +211,11 @@ export async function createExporter(data: ExporterFormData) {
               createdAt: true
             }
           }
-        }
+        },
+        orderBy: { name: 'asc' }
       })
   
+      console.log('Fetched consignees:', consignees) // Debug log
       return { success: true, data: consignees }
     } catch (error) {
       console.error('Error fetching consignees:', error)
@@ -230,47 +225,48 @@ export async function createExporter(data: ExporterFormData) {
   
   export async function getExporters(query?: string) {
     try {
-      const session = await getServerSession() as Session | null;
+      const session = await validateSession()
       if (!session?.user) {
-        throw new Error('Unauthorized');
+        return { error: 'Unauthorized' }
       }
   
-      const exporter = await prisma.exporter.findMany({
+      // Only CLIENT role should be restricted
+      if (session.user.role === USER_ROLES.CLIENT) {
+        return { error: 'Unauthorized access' }
+      }
+  
+      // Remove userId filtering for BROKER and SUPERADMIN
+      const exporters = await prisma.exporter.findMany({
         where: query ? {
-          AND: [
-            {
-              OR: [
-                { name: { contains: query } },
-                { email: { contains: query } }
-              ]
-            },
-            {
-              createdBy: {  // Reference the User relation
-                id: session.user.id
-              }
-            }
+          OR: [
+            { name: { contains: query, mode: 'insensitive' } },
+            { email: { contains: query, mode: 'insensitive' } }
           ]
-        } : {
-          createdBy: {
-            id: session.user.id
-          }
-        },
-        orderBy: { name: 'asc' },
+        } : {},
         include: {
-            shipments: {
+          createdBy: {
+            select: {
+              id: true,
+              name: true,
+              email: true
+            }
+          },
+          shipments: {
             select: {
               referenceNumber: true,
               status: true,
               createdAt: true
             }
           }
-        }
+        },
+        orderBy: { name: 'asc' }
       })
   
-      return { success: true, data: exporter }
+      console.log('Fetched exporters:', exporters) // Debug log
+      return { success: true, data: exporters }
     } catch (error) {
-      console.error('Error fetching exporter:', error)
-      return { error: 'Failed to fetch exporter' }
+      console.error('Error fetching exporters:', error)
+      return { error: 'Failed to fetch exporters' }
     }
   }
 
@@ -343,20 +339,25 @@ export async function addConsigneeDocument(
 }
 
 export async function getConsigneeById(id: string): Promise<ActionResponse<ConsigneeData>> {
-    try {
-      const consignee = await prisma.consignee.findUnique({
-        where: { id },
-        include: {
-          documents: true,
-          shipments: {
-            select: {
-              referenceNumber: true,
-              status: true,
-              createdAt: true
-            }
+  try {
+    const session = await validateSession()
+    if (!session?.user) {
+      return { error: 'Unauthorized' }
+    }
+
+    const consignee = await prisma.consignee.findUnique({
+      where: { id },
+      include: {
+        documents: true,
+        shipments: {
+          select: {
+            referenceNumber: true,
+            status: true,
+            createdAt: true
           }
         }
-      })
+      }
+    })
   
       if (!consignee) {
         return { error: 'Consignee not found' }
@@ -394,8 +395,13 @@ export async function getConsigneeById(id: string): Promise<ActionResponse<Consi
     }
   }
   
-export async function getExporterById(id: string): Promise<ActionResponse<ExporterData>> {
+  export async function getExporterById(id: string): Promise<ActionResponse<ExporterData>> {
     try {
+      const session = await validateSession()
+      if (!session?.user) {
+        return { error: 'Unauthorized' }
+      }
+  
       const exporter = await prisma.exporter.findUnique({
         where: { id },
         include: {
