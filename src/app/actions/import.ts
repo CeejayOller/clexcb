@@ -4,6 +4,7 @@
 import { prisma } from '@/lib/prisma';
 import { validateSession } from '@/lib/auth';
 import { revalidatePath } from 'next/cache';
+import { USER_ROLES } from '@/types/auth';
 
 import type { 
   ShipmentData, 
@@ -254,29 +255,70 @@ export async function processDocumentUploadAction(
 
 export async function getShipmentsAction(): Promise<{ success: boolean; data: ShipmentListItem[] }> {
   try {
-    const user = await getCurrentUser();
+    const session = await validateSession();
+    if (!session?.user) {
+      return { success: false, data: [] };
+    }
 
-    const shipments = await prisma.shipment.findMany({
-      where: {
-        userId: user.id
-      },
+    // Define base query
+    const baseQuery = {
       include: {
-        consignee: true,
-        exporter: true
+        consignee: {
+          select: {
+            name: true,
+            businessAddress: true,
+            tin: true
+          }
+        },
+        exporter: {
+          select: {
+            name: true,
+            businessAddress: true
+          }
+        },
+        createdBy: {
+          select: {
+            id: true,
+            name: true,
+            email: true
+          }
+        }
       },
       orderBy: {
-        createdAt: 'desc'
-      }
-    });
+        createdAt: 'desc' as const // Fix for orderBy type
+      },
+      where: {} as any
+    };
+
+    // Add role-based filtering
+    if (session.user.role === USER_ROLES.CLIENT) {
+      baseQuery.where.userId = session.user.id;
+    }
+
+    const shipments = await prisma.shipment.findMany(baseQuery);
 
     const transformedShipments: ShipmentListItem[] = shipments.map(shipment => {
       const shipmentDetails = JSON.parse(shipment.shipmentDetails);
       const shipmentType = shipment.freightType === 'IMS' ? 'sea' as const : 'air' as const;
 
+      // Get consignee name either from relation or JSON data
+      let consigneeName = 'N/A';
+      try {
+        if (shipment.consignee) {
+          consigneeName = shipment.consignee.name;
+        } else {
+          const consigneeData = JSON.parse(shipment.consigneeData);
+          consigneeName = consigneeData.name || 'N/A';
+        }
+      } catch (e) {
+        console.error('Error parsing consignee data:', e);
+      }
+
+      // Transform to ShipmentListItem
       return {
         id: shipment.id,
         referenceNumber: shipment.referenceNumber,
-        consignee: shipment.consignee?.name || JSON.parse(shipment.consigneeData).name || 'N/A',
+        consignee: consigneeName,
         type: shipmentType,
         blNumber: shipmentType === 'sea' ? shipmentDetails.bl_number || undefined : undefined,
         awbNumber: shipmentType === 'air' ? shipmentDetails.awb_number || undefined : undefined,
@@ -284,7 +326,13 @@ export async function getShipmentsAction(): Promise<{ success: boolean; data: Sh
         eta: shipmentDetails.eta || null,
         completionDate: shipment.completionDate?.toISOString() || null,
         lastUpdate: shipment.updatedAt.toISOString(),
-        isLocked: shipment.isLocked
+        isLocked: shipment.isLocked,
+        userId: shipment.userId,
+        createdBy: shipment.createdBy ? {
+          id: shipment.createdBy.id,
+          name: shipment.createdBy.name,
+          email: shipment.createdBy.email
+        } : undefined
       };
     });
 
@@ -303,22 +351,37 @@ export async function getShipmentsAction(): Promise<{ success: boolean; data: Sh
 
 export async function getShipmentByIdAction(id: string): Promise<ShipmentData | null> {
   try {
-    const user = await getCurrentUser();
+    const session = await validateSession();
+    if (!session?.user) {
+      return null;
+    }
 
-    const shipment = await prisma.shipment.findUnique({
-      where: { 
-        id,
-        userId: user.id
-      },
+    // Build the query based on user role
+    const query = {
+      where: { id } as any,
       include: {
         consignee: {
           include: {
             documents: true
           }
         },
-        exporter: true
+        exporter: true,
+        createdBy: {
+          select: {
+            id: true,
+            name: true,
+            email: true
+          }
+        }
       }
-    });
+    };
+
+    // Only add userId filter for CLIENT role
+    if (session.user.role === USER_ROLES.CLIENT) {
+      query.where.userId = session.user.id;
+    }
+
+    const shipment = await prisma.shipment.findFirst(query);
 
     if (!shipment) return null;
 

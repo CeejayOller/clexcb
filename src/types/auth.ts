@@ -20,7 +20,7 @@ export const ROLE_PERMISSIONS = {
   [USER_ROLES.BROKER]: {
     canAccessAdmin: true,
     canAccessClient: false,
-    canViewOwn: true,
+    canViewAll: true,
     canEditOwn: true,
     canDeleteOwn: true,
     canCreate: true

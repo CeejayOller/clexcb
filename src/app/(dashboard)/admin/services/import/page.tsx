@@ -10,7 +10,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Plus, FileText, Ship, Plane } from 'lucide-react';
+import { Plus, Ship, Plane, Search, Loader2 } from 'lucide-react';
+import { Input } from '@/components/ui/input';
 import { useAuth } from '@/components/layout/AuthProvider';
 import { RequireAuth } from '@/components/auth/RequireAuth';
 import { USER_ROLES } from '@/types/auth';
@@ -23,7 +24,8 @@ import { getShipmentsAction } from '@/app/actions/import';
 interface ShipmentTableProps {
   shipments: ShipmentListItem[];
   isHistorical?: boolean;
-  userPermissions: any;
+  onRowClick: (id: string, isLocked: boolean) => void;
+  searchQuery: string;
 }
 
 const ImportClearancePage = () => {
@@ -34,6 +36,7 @@ const ImportClearancePage = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [shipments, setShipments] = useState<ShipmentListItem[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const permissions = getResourcePermissions(user);
 
@@ -47,22 +50,31 @@ const ImportClearancePage = () => {
   // Status style helper
   const getStatusStyle = (status: string) => {
     const styles: { [key: string]: string } = {
-      DOCUMENT_COLLECTION: 'bg-yellow-100 text-yellow-800 hover:bg-yellow-100/80',
-      TAX_COMPUTATION: 'bg-purple-100 text-purple-800 hover:bg-purple-100/80',
-      READY_FOR_E2M: 'bg-blue-100 text-blue-800 hover:bg-blue-100/80',
-      LODGED_IN_E2M: 'bg-indigo-100 text-indigo-800 hover:bg-indigo-100/80',
-      PAYMENT_COMPLETED: 'bg-emerald-100 text-emerald-800 hover:bg-emerald-100/80',
-      PORT_RELEASE: 'bg-orange-100 text-orange-800 hover:bg-orange-100/80',
-      IN_TRANSIT: 'bg-cyan-100 text-cyan-800 hover:bg-cyan-100/80',
-      DELIVERED: 'bg-green-100 text-green-800 hover:bg-green-100/80'
+      CLIENT_DETAILS: 'bg-gray-100 text-gray-800',
+      DOCUMENT_COLLECTION: 'bg-yellow-100 text-yellow-800',
+      TAX_COMPUTATION: 'bg-purple-100 text-purple-800',
+      READY_FOR_E2M: 'bg-blue-100 text-blue-800',
+      LODGED_IN_E2M: 'bg-indigo-100 text-indigo-800',
+      PAYMENT_COMPLETED: 'bg-emerald-100 text-emerald-800',
+      PORT_RELEASE: 'bg-orange-100 text-orange-800',
+      IN_TRANSIT: 'bg-cyan-100 text-cyan-800',
+      DELIVERED: 'bg-green-100 text-green-800'
     };
-    return styles[status] || 'bg-gray-100 text-gray-800 hover:bg-gray-100/80';
+    return styles[status] || 'bg-gray-100 text-gray-800';
   };
 
   // Navigation handler
-  const handleViewShipment = (id: string, isLocked: boolean) => {
+  const handleRowClick = (id: string, isLocked: boolean) => {
     router.push(`/admin/services/import/${id}?locked=${isLocked}`);
   };
+
+  // Filter shipments based on search query
+  const filteredShipments = shipments.filter(shipment => 
+    shipment.referenceNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    shipment.consignee.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (shipment.blNumber && shipment.blNumber.toLowerCase().includes(searchQuery.toLowerCase())) ||
+    (shipment.awbNumber && shipment.awbNumber.toLowerCase().includes(searchQuery.toLowerCase()))
+  );  
 
   // Fetch shipments
   useEffect(() => {
@@ -90,7 +102,8 @@ const ImportClearancePage = () => {
   const ShipmentTable: React.FC<ShipmentTableProps> = ({ 
     shipments, 
     isHistorical = false,
-    userPermissions 
+    onRowClick,
+    searchQuery 
   }) => (
     <Table>
       <TableHeader>
@@ -102,84 +115,62 @@ const ImportClearancePage = () => {
           <TableHead>Document No.</TableHead>
           <TableHead>Status</TableHead>
           <TableHead>Last Update</TableHead>
-          <TableHead>Owner</TableHead>
-          <TableHead>Action</TableHead>
+          <TableHead>Customs Broker</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
         {shipments
-          .filter((s: ShipmentListItem) => 
-            isHistorical ? s.status === 'DELIVERED' : s.status !== 'DELIVERED'
-          )
-          .map((shipment) => {
-            const itemPermissions = getResourcePermissions(user, shipment.userId);
-            
-            return (
-              <TableRow key={shipment.id}>
-                <TableCell className="font-medium">{shipment.referenceNumber}</TableCell>
-                <TableCell>{shipment.consignee}</TableCell>
-                <TableCell>
-                  {shipment.type === 'sea' ? (
-                    <div className="flex items-center">
-                      <Ship className="w-4 h-4 mr-1" />
-                      SEA
-                    </div>
-                  ) : (
-                    <div className="flex items-center">
-                      <Plane className="w-4 h-4 mr-1" />
-                      AIR
-                    </div>
-                  )}
-                </TableCell>
-                <TableCell>
-                  {formatDate(
-                    isHistorical ? shipment.completionDate : shipment.eta,
-                    'Pending'
-                  )}
-                </TableCell>
-                <TableCell>
-                  {shipment.type === 'sea' ? shipment.blNumber || 'N/A' : shipment.awbNumber || 'N/A'}
-                </TableCell>
-                <TableCell>
-                  <Badge 
-                    className={`${getStatusStyle(shipment.status)} border-none`}
-                    variant="outline"
-                  >
-                    {shipment.status.replace(/_/g, ' ')}
-                  </Badge>
-                </TableCell>
-                <TableCell>
-                  {formatDate(shipment.lastUpdate, 'Recent')}
-                </TableCell>
-                <TableCell>
-                  {shipment.userId === user?.id ? (
-                    <Badge variant="outline" className="bg-blue-50">You</Badge>
-                  ) : (
-                    <Badge variant="outline">{shipment.createdBy?.name || 'Unknown'}</Badge>
-                  )}
-                </TableCell>
-                <TableCell>
-                  <div className="flex items-center space-x-2">
-                    {itemPermissions.canView && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleViewShipment(shipment.id, shipment.isLocked || false)}
-                      >
-                        <FileText className="w-4 h-4 mr-1" />
-                        View
-                      </Button>
-                    )}
-                    {shipment.isLocked && (
-                      <Badge variant="secondary">
-                        Locked
-                      </Badge>
-                    )}
+          .filter(s => isHistorical ? s.status === 'DELIVERED' : s.status !== 'DELIVERED')
+          .map((shipment) => (
+            <TableRow 
+              key={shipment.id}
+              className="cursor-pointer hover:bg-gray-50"
+              onClick={() => onRowClick(shipment.id, shipment.isLocked || false)}
+            >
+              <TableCell className="font-medium">{shipment.referenceNumber}</TableCell>
+              <TableCell>{shipment.consignee}</TableCell>
+              <TableCell>
+                {shipment.type === 'sea' ? (
+                  <div className="flex items-center">
+                    <Ship className="w-4 h-4 mr-1" />
+                    SEA
                   </div>
-                </TableCell>
-              </TableRow>
-            );
-          })}
+                ) : (
+                  <div className="flex items-center">
+                    <Plane className="w-4 h-4 mr-1" />
+                    AIR
+                  </div>
+                )}
+              </TableCell>
+              <TableCell>
+                {formatDate(
+                  isHistorical ? shipment.completionDate : shipment.eta,
+                  'Pending'
+                )}
+              </TableCell>
+              <TableCell>
+                {shipment.type === 'sea' ? shipment.blNumber || 'N/A' : shipment.awbNumber || 'N/A'}
+              </TableCell>
+              <TableCell>
+                <Badge 
+                  className={`${getStatusStyle(shipment.status)} border-none`}
+                  variant="outline"
+                >
+                  {shipment.status.replace(/_/g, ' ')}
+                </Badge>
+              </TableCell>
+              <TableCell>
+                {formatDate(shipment.lastUpdate, 'Recent')}
+              </TableCell>
+              <TableCell>
+                {shipment.userId === user?.id ? (
+                  <Badge variant="outline" className="bg-blue-50">You</Badge>
+                ) : (
+                  <Badge variant="outline">{shipment.createdBy?.name || 'Unassigned'}</Badge>
+                )}
+              </TableCell>
+            </TableRow>
+          ))}
       </TableBody>
     </Table>
   );
@@ -206,6 +197,18 @@ const ImportClearancePage = () => {
         )}
       </div>
 
+      <div className="mb-6">
+        <div className="relative">
+          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-500" />
+          <Input
+            placeholder="Search by reference number, consignee, or document number..."
+            className="pl-8"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        </div>
+      </div>
+
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="grid w-full grid-cols-2 max-w-[400px]">
           <TabsTrigger value="active">Active Shipments</TabsTrigger>
@@ -219,11 +222,16 @@ const ImportClearancePage = () => {
             </CardHeader>
             <CardContent>
               {isLoading ? (
-                <div>Loading...</div>
+                <div className="flex items-center justify-center p-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900" />
+                </div>
+              ) : error ? (
+                <div className="text-center text-red-600 p-4">{error}</div>
               ) : (
                 <ShipmentTable 
-                  shipments={shipments} 
-                  userPermissions={permissions}
+                  shipments={filteredShipments}
+                  onRowClick={handleRowClick}
+                  searchQuery={searchQuery}
                 />
               )}
             </CardContent>
@@ -237,12 +245,17 @@ const ImportClearancePage = () => {
             </CardHeader>
             <CardContent>
               {isLoading ? (
-                <div>Loading...</div>
+                <div className="flex items-center justify-center p-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900" />
+                </div>
+              ) : error ? (
+                <div className="text-center text-red-600 p-4">{error}</div>
               ) : (
                 <ShipmentTable 
-                  shipments={shipments} 
+                  shipments={filteredShipments}
                   isHistorical={true}
-                  userPermissions={permissions}
+                  onRowClick={handleRowClick}
+                  searchQuery={searchQuery}
                 />
               )}
             </CardContent>

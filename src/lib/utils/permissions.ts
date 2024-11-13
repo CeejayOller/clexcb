@@ -80,14 +80,11 @@ export function filterUserAccessibleData<T extends { userId: string }>(
   user: User,
   data: T[]
 ): T[] {
-  if (user.role === USER_ROLES.SUPERADMIN) {
-    return data;
-  }
-
-  if (user.role === USER_ROLES.BROKER) {
+  // Only filter for CLIENT role
+  if (user.role === USER_ROLES.CLIENT) {
     return data.filter(item => item.userId === user.id);
   }
 
-  // Clients can only see their own data
-  return data.filter(item => item.userId === user.id);
+  // SUPERADMIN and BROKER can see all data
+  return data;
 }

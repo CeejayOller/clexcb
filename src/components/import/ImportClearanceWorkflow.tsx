@@ -46,15 +46,15 @@ interface EditableCardProps {
 
 
 
-const ImportClearanceWorkflow: React.FC<ImportClearanceWorkflowProps> = ({ initialData }) => {
+export default function ImportClearanceWorkflow({ initialData }: ImportClearanceWorkflowProps) {
   const router = useRouter();
   const { toast } = useToast();
   const { user } = useAuth();
-  const [hasPermission, setHasPermission] = useState(false)
+
+  // Consolidate all useState hooks at the top
+  const [hasPermission, setHasPermission] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editSection, setEditSection] = useState<string>('');
-
-  // Component states
   const [state, setState] = useState<ImportWorkflowState>({
     currentState: (initialData?.status as keyof typeof WORKFLOW_STATES) || 'CLIENT_DETAILS',
     showConfirmDialog: false,
@@ -65,126 +65,150 @@ const ImportClearanceWorkflow: React.FC<ImportClearanceWorkflowProps> = ({ initi
     confirmationType: 'complete',
     missingFields: []
   });
-
   
+    // Move the edit dialog state up
+    const [editDialog, setEditDialog] = useState<{
+      isOpen: boolean;
+      section: string;
+    }>({
+      isOpen: false,
+      section: '',
+    });
 
-  // Shipment data state - initialized with initialData or default values
-  const [shipmentData, setShipmentData] = useState<ShipmentData>(initialData || {
-    id: '',
-    referenceNumber: '',
-    status: 'CLIENT_DETAILS',
-    consignee: null,
-    exporter: {
-      name: '',
-      address: ''
-    },
-    shipmentDetails: {
-      bl_number: '',
-      vessel_name: '',
-      flight_number: '',
-      registry_number: '',
-      voyage_number: '',
-      container_number: '',
-      port_of_origin: '',
-      port_of_discharge: '',
-      eta: '',
-      ata: '',
-      description_of_goods: '',
-      volume: ''
-    },
-    documents: [],
-    timeline: [],
-    notes: [],
-    cargo: [],
-    statementOfFacts: [],
-    computations: null
-  });
+    const [shipmentData, setShipmentData] = useState<ShipmentData>(initialData || {
+      id: '',
+      referenceNumber: '',
+      status: 'CLIENT_DETAILS',
+      consignee: null,
+      exporter: {
+        name: '',
+        address: ''
+      },
+      shipmentDetails: {
+        bl_number: '',
+        vessel_name: '',
+        flight_number: '',
+        registry_number: '',
+        voyage_number: '',
+        container_number: '',
+        port_of_origin: '',
+        port_of_discharge: '',
+        eta: '',
+        ata: '',
+        description_of_goods: '',
+        volume: ''
+      },
+      documents: [],
+      timeline: [],
+      notes: [],
+      cargo: [],
+      statementOfFacts: [],
+      computations: null
+    });
 
-  // 2. Utility Functions and Event Handlers
-  // Reference number generation
-  const generateReferenceNumber = async () => {
-    try {
-      setState(prev => ({ ...prev, isLoading: true }));
-      
-      const response = await fetch('/api/admin/import', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          shipmentType: state.freightType,
-          formData: {
-            consignee: {},
-            exporter: {},
-            shipmentDetails: {},
-            documents: REQUIRED_DOCUMENTS.map(doc => ({
-              name: doc.name,
-              status: 'not_uploaded',
-              isVerified: false,
-              isRequired: doc.isRequired
-            }))
-          }
-        }),
-      });
-
-      if (!response.ok) throw new Error('Failed to create shipment');
-
-      const data = await response.json();
-      setShipmentData(data);
-    } catch (error) {
-      console.error('Error creating shipment:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to create shipment',
-        variant: 'destructive',
-      });
-    } finally {
-      setState(prev => ({ ...prev, isLoading: false }));
+  // 3. Effects
+  // Generate reference number on mount
+  useEffect(() => {
+    if (!shipmentData.referenceNumber) {
+      generateReferenceNumber();
     }
-  };
+  }, []);
 
-  // function to update shipment
-  const updateShipmentData = async (updates: Partial<ShipmentData>) => {
-    try {
-      if (!shipmentData?.id) return;
-
-      const response = await fetch(`/api/admin/import/${shipmentData.id}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          ...updates,
-          currentStage: state.currentState,
-        }),
-      });
-
-      if (!response.ok) throw new Error('Failed to update shipment');
-
-      const updatedShipment = await response.json();
-      setShipmentData(updatedShipment);
+  useEffect(() => {
+    async function checkPermission() {
+      if (!user?.id || !initialData?.id) return
       
-      toast({
-        title: 'Success',
-        description: 'Shipment updated successfully',
-      });
-    } catch (error) {
-      console.error('Error updating shipment:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to update shipment',
-        variant: 'destructive',
-      });
+      const canAccess = await checkUserPermissions(user.id, initialData.id)
+      setHasPermission(canAccess)
     }
-  };
+    
+    checkPermission()
+  }, [user, initialData])
 
-  // Freight type handler
+    // Reference number generation
+    const generateReferenceNumber = async () => {
+      try {
+        setState(prev => ({ ...prev, isLoading: true }));
+        
+        const response = await fetch('/api/admin/import', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            shipmentType: state.freightType,
+            formData: {
+              consignee: {},
+              exporter: {},
+              shipmentDetails: {},
+              documents: REQUIRED_DOCUMENTS.map(doc => ({
+                name: doc.name,
+                status: 'not_uploaded',
+                isVerified: false,
+                isRequired: doc.isRequired
+              }))
+            }
+          }),
+        });
+  
+        if (!response.ok) throw new Error('Failed to create shipment');
+  
+        const data = await response.json();
+        setShipmentData(data);
+      } catch (error) {
+        console.error('Error creating shipment:', error);
+        toast({
+          title: 'Error',
+          description: 'Failed to create shipment',
+          variant: 'destructive',
+        });
+      } finally {
+        setState(prev => ({ ...prev, isLoading: false }));
+      }
+    };
+  
+    // function to update shipment
+    const updateShipmentData = async (updates: Partial<ShipmentData>) => {
+      try {
+        if (!shipmentData?.id) return;
+  
+        const response = await fetch(`/api/admin/import/${shipmentData.id}`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            ...updates,
+            currentStage: state.currentState,
+          }),
+        });
+  
+        if (!response.ok) throw new Error('Failed to update shipment');
+  
+        const updatedShipment = await response.json();
+        setShipmentData(updatedShipment);
+        
+        toast({
+          title: 'Success',
+          description: 'Shipment updated successfully',
+        });
+      } catch (error) {
+        console.error('Error updating shipment:', error);
+        toast({
+          title: 'Error',
+          description: 'Failed to update shipment',
+          variant: 'destructive',
+        });
+      }
+    };
+
+      // Freight type handler
   const handleFreightTypeChange = (freightType: ImportTransactionType) => {
     setState(prev => ({ ...prev, freightType }));
     generateReferenceNumber();
   };
 
-  // Stage status helper
+    // Stage status helper
   const getStageStatus = (stage: keyof typeof WORKFLOW_STATES): WorkflowStageStatus => {
     const states = Object.keys(WORKFLOW_STATES);
     const currentIndex = states.indexOf(state.currentState);
@@ -207,7 +231,7 @@ const ImportClearanceWorkflow: React.FC<ImportClearanceWorkflowProps> = ({ initi
     }
   };
 
-  // Stage completion handler to use API
+    // Stage completion handler to use API
   const handleStageCompletion = async () => {
     try {
       await updateShipment(shipmentData.id, {
@@ -235,19 +259,10 @@ const ImportClearanceWorkflow: React.FC<ImportClearanceWorkflowProps> = ({ initi
     }
   };
 
-  const [editDialog, setEditDialog] = useState<{
-    isOpen: boolean;
-    section: string;
-  }>({
-    isOpen: false,
-    section: '',
-  });
-    
   const handleUpdate = async (updates: Partial<ShipmentData>) => {
     try {
       setState(prev => ({ ...prev, isLoading: true }));
       
-      // Immediately update local state for better UX
       setShipmentData(prevData => ({
         ...prevData,
         ...updates,
@@ -256,7 +271,6 @@ const ImportClearanceWorkflow: React.FC<ImportClearanceWorkflowProps> = ({ initi
       const result = await updateShipmentDetailsAction(shipmentData.id, updates);
       
       if (!result.success) {
-        // Revert local state if server update fails
         throw new Error(result.error);
       }
   
@@ -276,11 +290,6 @@ const ImportClearanceWorkflow: React.FC<ImportClearanceWorkflowProps> = ({ initi
         description: error instanceof Error ? error.message : 'Failed to update shipment',
         variant: 'destructive',
       });
-      
-      // Optionally revert the local state change
-      if (initialData) {
-        setShipmentData(initialData);
-      }
     } finally {
       setState(prev => ({ ...prev, isLoading: false }));
     }
@@ -312,8 +321,6 @@ const ImportClearanceWorkflow: React.FC<ImportClearanceWorkflowProps> = ({ initi
       });
     }
   };
-
-
 
   // Document Upload Handler
   const handleDocumentUpload = async (file: File, documentType: string) => {
@@ -364,26 +371,7 @@ const ImportClearanceWorkflow: React.FC<ImportClearanceWorkflowProps> = ({ initi
         variant: 'destructive',
       });
     }
-  };
-
-  // 3. Effects
-  // Generate reference number on mount
-  useEffect(() => {
-    if (!shipmentData.referenceNumber) {
-      generateReferenceNumber();
-    }
-  }, []);
-
-  useEffect(() => {
-    async function checkPermission() {
-      if (!user?.id || !initialData?.id) return
-      
-      const canAccess = await checkUserPermissions(user.id, initialData.id)
-      setHasPermission(canAccess)
-    }
-    
-    checkPermission()
-  }, [user, initialData])
+  };  
 
   // Protect the component
   if (!hasPermission) {
@@ -567,23 +555,16 @@ const checkClientDetails = () => {
   };
 };
 
-const [isEditing, setIsEditing] = useState<{
-  isOpen: boolean;
-  section: string | null;
-}>({
-  isOpen: false,
-  section: null
-});
 
 // 8. Main Render Function
 return (
   <ModernWorkflowLayout
-      isLoading={state.isLoading}
-      currentStage={state.currentState}
-      stageStatus={getStageStatus(state.currentState)}
-      shipmentData={shipmentData}
-      onRefresh={() => window.location.reload()}
-    >
+    isLoading={state.isLoading}
+    currentStage={state.currentState}
+    stageStatus={getStageStatus(state.currentState)}
+    shipmentData={shipmentData}
+    onRefresh={() => window.location.reload()}
+  >
     <Card className="mt-6">
       <CardHeader>
         <CardTitle>{WORKFLOW_STATES[state.currentState].label}</CardTitle>
@@ -691,6 +672,3 @@ return (
 );
 };
 
-
-//export component
-export default ImportClearanceWorkflow;
