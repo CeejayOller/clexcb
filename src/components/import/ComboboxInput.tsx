@@ -15,14 +15,17 @@ import { Input } from '@/components/ui/input'
 import type { CustomEntity } from '@/types/import'
 import { getSavedEntitiesAction } from '@/app/actions/import'
 import { useToast } from '@/components/ui/use-toast'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { useAuth } from '@/components/layout/AuthProvider'
+import { USER_ROLES } from '@/types/auth'
 
 interface ComboboxInputProps {
   type: 'consignee' | 'exporter';
   value: string;
-  onChangeAction: (value: string, entityId?: string) => Promise<void>;
+  onChangeAction: (value: string, entityId?: string, shouldCreate?: boolean) => Promise<void>;
   placeholder?: string;
   className?: string;
-  initialEntities?: CustomEntity[]; // Optional prop for initial entities
+  initialEntities?: CustomEntity[];
 }
 
 export function ComboboxInput({
@@ -35,56 +38,76 @@ export function ComboboxInput({
 }: ComboboxInputProps) {
   const [open, setOpen] = React.useState(false)
   const [searchTerm, setSearchTerm] = React.useState('')
-  const [savedEntities, setSavedEntities] = React.useState<CustomEntity[]>(initialEntities)
+  const [savedEntities, setSavedEntities] = React.useState<CustomEntity[]>([])
   const [isLoading, setIsLoading] = React.useState(false)
   const { toast } = useToast()
   const [selectedEntity, setSelectedEntity] = React.useState<CustomEntity | null>(null)
+  const { user } = useAuth()
 
-  // Fetch saved entities on mount
-  React.useEffect(() => {
-    const fetchEntities = async () => {
-      if (initialEntities.length > 0) {
+    // Initialize with initialEntities if provided
+    React.useEffect(() => {
+      if (initialEntities && initialEntities.length > 0) {
         setSavedEntities(initialEntities)
-        return
       }
+    }, [initialEntities])
 
-      setIsLoading(true)
-      try {
-        const entities = await getSavedEntitiesAction(type)
-        setSavedEntities(entities)
-      } catch (error) {
-        console.error('Error fetching saved entities:', error)
-        toast({
-          title: 'Error',
-          description: 'Failed to load saved entries',
-          variant: 'destructive'
-        })
-      } finally {
-        setIsLoading(false)
+    // Separate effect for fetching entities
+    React.useEffect(() => {
+      const fetchEntities = async () => {
+        if (initialEntities && initialEntities.length > 0) return
+  
+        setIsLoading(true)
+        try {
+          const result = await getSavedEntitiesAction(type)
+          setSavedEntities(Array.isArray(result) ? result : [])
+        } catch (error) {
+          console.error('Error fetching saved entities:', error)
+          toast({
+            title: 'Error',
+            description: 'Failed to load saved entries',
+            variant: 'destructive'
+          })
+          setSavedEntities([])
+        } finally {
+          setIsLoading(false)
+        }
       }
-    }
+  
+      fetchEntities()
+    }, [type, toast, initialEntities])
 
-    fetchEntities()
-  }, [type, toast, initialEntities])
 
-  // Filter entities based on search term
+  const hasPermissionToView = (entity: CustomEntity) => {
+    if (!user) return false;
+    const allowedRoles = [USER_ROLES.BROKER, USER_ROLES.SUPERADMIN] as const;
+    return allowedRoles.includes(user.role as typeof allowedRoles[number]);
+  };
+
   const filteredEntities = React.useMemo(() => {
-    return savedEntities.filter(entity => {
-      if (!searchTerm) return true
-      return (
-        entity.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        entity.address?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (type === 'consignee' && entity.tin?.toLowerCase().includes(searchTerm.toLowerCase()))
-      )
-    })
-  }, [savedEntities, searchTerm, type])
+    const entities = savedEntities || [];
+    if (!searchTerm) {
+      return entities.filter(entity => hasPermissionToView(entity));
+    }
+    
+    return entities
+      .filter(entity => hasPermissionToView(entity))
+      .filter(entity => {
+        const searchLower = searchTerm.toLowerCase();
+        return (
+          entity.name.toLowerCase().includes(searchLower) ||
+          entity.address?.toLowerCase().includes(searchLower) ||
+          (type === 'consignee' && entity.tin?.toLowerCase().includes(searchLower))
+        );
+      });
+  }, [savedEntities, searchTerm, type, user]);
 
   const handleInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const newValue = e.target.value
     setSearchTerm(newValue)
-    setSelectedEntity(null) // Clear selected entity when typing
+    setSelectedEntity(null)
     try {
-      await onChangeAction(newValue)
+      // Just update display value, don't create entity
+      await onChangeAction(newValue, undefined, false)
     } catch (error) {
       console.error('Error updating value:', error)
       toast({
@@ -95,10 +118,31 @@ export function ComboboxInput({
     }
   }
 
-  const handleSelect = async (selectedEntity: CustomEntity) => {
+  const handleKeyDown = async (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && searchTerm.trim()) {
+      e.preventDefault()
+      try {
+        // Create new entity on Enter
+        await onChangeAction(searchTerm, undefined, true)
+        setOpen(false)
+        setSearchTerm('')
+      } catch (error) {
+        console.error('Error creating new entity:', error)
+        toast({
+          title: 'Error',
+          description: 'Failed to create new entity',
+          variant: 'destructive'
+        })
+      }
+    }
+  }
+
+  const handleSelect = async (entity: CustomEntity) => {
+    if (!entity) return
+    
     try {
-      setSelectedEntity(selectedEntity)
-      await onChangeAction(selectedEntity.name, selectedEntity.id)
+      setSelectedEntity(entity)
+      await onChangeAction(entity.name, entity.id, true)
       setOpen(false)
       setSearchTerm('')
     } catch (error) {
@@ -112,42 +156,45 @@ export function ComboboxInput({
   }
 
   return (
-    <div className={cn("relative w-full", className)}>
-      <div className="relative">
-        <Input
-          value={value}
-          onChange={handleInputChange}
-          onFocus={() => setOpen(true)}
-          placeholder={placeholder || `Select or enter new ${type}`}
-          className="w-full pr-10"
-          disabled={isLoading}
-        />
-        <ChevronDown 
-          className={cn(
-            "absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 transition-transform duration-200",
-            open && "transform rotate-180"
-          )}
-          onClick={() => setOpen(!open)}
-        />
-      </div>
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <div className="relative w-full">
+          <Input
+            value={value}
+            onChange={handleInputChange}
+            onKeyDown={handleKeyDown}
+            placeholder={placeholder || `Select or enter new ${type}`}
+            className={cn("w-full pr-10", className)}
+            disabled={isLoading}
+          />
+          <ChevronDown 
+            className={cn(
+              "absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 transition-transform duration-200",
+              open && "transform rotate-180"
+            )}
+          />
+        </div>
+      </PopoverTrigger>
 
-      {open && (
-        <div className="absolute z-50 w-full mt-1 bg-popover rounded-md border shadow-md">
-          <Command className="w-full">
-            <CommandInput
-              placeholder={`Search ${type}...`}
-              value={searchTerm}
-              onValueChange={setSearchTerm}
-              className="border-none focus:ring-0"
-              disabled={isLoading}
-            />
-            <CommandEmpty>
-              {isLoading ? 'Loading...' : (
-                <div className="p-2 text-sm text-muted-foreground">
-                  No {type} found. Type to create new.
-                </div>
-              )}
-            </CommandEmpty>
+      <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+        <Command>
+          <CommandInput
+            placeholder={`Search ${type}...`}
+            value={searchTerm}
+            onValueChange={setSearchTerm}
+            className="border-none focus:ring-0"
+            disabled={isLoading}
+          />
+          <CommandEmpty>
+            {isLoading ? (
+              <div className="p-2 text-sm text-muted-foreground">Loading...</div>
+            ) : (
+              <div className="p-2 text-sm text-muted-foreground">
+                No {type} found. Type to create new.
+              </div>
+            )}
+          </CommandEmpty>
+          {filteredEntities.length > 0 && (
             <CommandGroup className="max-h-[200px] overflow-y-auto">
               {filteredEntities.map((entity) => (
                 <CommandItem
@@ -178,9 +225,9 @@ export function ComboboxInput({
                 </CommandItem>
               ))}
             </CommandGroup>
-          </Command>
-        </div>
-      )}
-    </div>
+          )}
+        </Command>
+      </PopoverContent>
+    </Popover>
   );
 }

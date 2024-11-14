@@ -132,13 +132,26 @@ export async function createShipmentAction(data: {
 
 export async function getSavedEntitiesAction(type: 'consignee' | 'exporter') {
   try {
-    const user = await getCurrentUser();
+    const session = await validateSession();
+    if (!session?.user) {
+      console.log('No user session found');
+      return [];
+    }
+
+    // Define allowed roles
+    const allowedRoles = [USER_ROLES.BROKER, USER_ROLES.SUPERADMIN] as const;
+    
+    // Check if user role is allowed
+    if (!allowedRoles.includes(session.user.role as typeof allowedRoles[number])) {
+      console.log('Unauthorized role');
+      return [];
+    }
+
+    console.log('User role:', session.user.role);
 
     if (type === 'consignee') {
       const consignees = await prisma.consignee.findMany({
-        where: {
-          userId: user.id
-        },
+        // No where clause - get all consignees
         select: {
           id: true,
           name: true,
@@ -147,12 +160,20 @@ export async function getSavedEntitiesAction(type: 'consignee' | 'exporter') {
           brn: true,
           contactPerson: true,
           contactNumber: true,
-          email: true
+          email: true,
+          createdBy: {
+            select: {
+              id: true,
+              name: true
+            }
+          }
         },
         orderBy: {
           createdAt: 'desc'
         }
       });
+
+      console.log('Found consignees:', consignees.length);
 
       return consignees.map(c => ({
         id: c.id,
@@ -162,25 +183,32 @@ export async function getSavedEntitiesAction(type: 'consignee' | 'exporter') {
         brn: c.brn,
         contactPerson: c.contactPerson,
         contactNumber: c.contactNumber,
-        email: c.email
+        email: c.email,
+        createdBy: c.createdBy
       }));
     } else {
       const exporters = await prisma.exporter.findMany({
-        where: {
-          userId: user.id
-        },
+        // No where clause - get all exporters
         select: {
           id: true,
           name: true,
           businessAddress: true,
           contactPerson: true,
           contactNumber: true,
-          email: true
+          email: true,
+          createdBy: {
+            select: {
+              id: true,
+              name: true
+            }
+          }
         },
         orderBy: {
           createdAt: 'desc'
         }
       });
+
+      console.log('Found exporters:', exporters.length);
 
       return exporters.map(e => ({
         id: e.id,
@@ -188,7 +216,8 @@ export async function getSavedEntitiesAction(type: 'consignee' | 'exporter') {
         address: e.businessAddress,
         contactPerson: e.contactPerson,
         contactNumber: e.contactNumber,
-        email: e.email
+        email: e.email,
+        createdBy: e.createdBy
       }));
     }
   } catch (error) {
@@ -687,7 +716,11 @@ export async function createClientDuringShipmentAction(
     type: 'consignee' | 'exporter';
     name: string;
     address: string;
-    [key: string]: any; // Additional fields
+    contactPerson?: string;
+    contactNumber?: string;
+    email?: string;
+    tin?: string;
+    brn?: string;
   }
 ) {
   try {
@@ -697,14 +730,25 @@ export async function createClientDuringShipmentAction(
       const consignee = await prisma.consignee.create({
         data: {
           name: data.name,
+          registeredName: data.name,
           businessAddress: data.address,
-          registeredName: data.registeredName || data.name,
           tin: data.tin || '',
           brn: data.brn || '',
           contactPerson: data.contactPerson || '',
           contactNumber: data.contactNumber || '',
           email: data.email || '',
           userId: user.id
+        },
+        // Include all fields we need
+        select: {
+          id: true,
+          name: true,
+          businessAddress: true,
+          tin: true,
+          brn: true,
+          contactPerson: true,
+          contactNumber: true,
+          email: true
         }
       });
       return { success: true, client: consignee };
@@ -717,6 +761,15 @@ export async function createClientDuringShipmentAction(
           contactNumber: data.contactNumber || '',
           email: data.email || '',
           userId: user.id
+        },
+        // Include all fields we need
+        select: {
+          id: true,
+          name: true,
+          businessAddress: true,
+          contactPerson: true,
+          contactNumber: true,
+          email: true
         }
       });
       return { success: true, client: exporter };

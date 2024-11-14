@@ -40,10 +40,15 @@ export interface ShipmentForm {
   id: string;
   consignee: string;
   consigneeId?: string;
+  consigneeNew?: string;
   contactPerson: string;
+  consigneeContactNumber?: string;
   exporter: string;
   exporterId?: string;
+  exporterNew?: string;
   exporterAddress: string;
+  exporterContactPerson?: string;
+  exporterContactNumber?: string;
   portOfOrigin: string;
   countryOfExport: string;
   countryOfOrigin: string;

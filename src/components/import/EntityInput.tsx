@@ -15,9 +15,11 @@ interface EntityInputProps {
 export const EntityInput: React.FC<EntityInputProps> = ({
   type,
   value,
-  savedEntries,
+  savedEntries = [],
   onChange
 }) => {
+  // Ensure savedEntries is always an array
+  const entries = Array.isArray(savedEntries) ? savedEntries : [];
   return (
     <div className="space-y-2">
       <Label>{type === 'consignee' ? 'Consignee' : 'Exporter'}</Label>
@@ -30,7 +32,7 @@ export const EntityInput: React.FC<EntityInputProps> = ({
             <SelectValue placeholder={`Select saved ${type}`} />
           </SelectTrigger>
           <SelectContent>
-            {savedEntries.map((entry) => (
+            {entries.map((entry) => (
               <SelectItem key={entry.id} value={entry.name}>
                 {entry.name}
               </SelectItem>
