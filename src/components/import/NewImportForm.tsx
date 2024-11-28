@@ -15,7 +15,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Ship, Plane, Plus, Upload, FileText, X } from 'lucide-react';
 import { DialogDescription } from '@/components/ui/dialog';
 import { createClientDuringShipmentAction } from '@/app/actions/import';
-import { useAuth } from '@/components/layout/AuthProvider'
+import { useAuth } from '@/components/providers/AuthProvider'
 import type { 
   CustomEntity, 
   ValidationErrors, 

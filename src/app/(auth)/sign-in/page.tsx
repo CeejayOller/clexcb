@@ -1,18 +1,22 @@
 // app/(auth)/sign-in/page.tsx
 'use client'
 
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useToast } from '@/components/ui/use-toast'
 import { AuthCard } from '@/components/auth/AuthCard'
 import { SignInForm } from '@/components/auth/SignInForm'
 import { signIn } from '@/app/actions/auth'
 import { useState } from 'react'
 import { USER_ROLES } from '@/types/auth'
+import { signInSchema, type SignInInput } from '@/lib/validations/auth'
+import { useAuth } from '@/components/providers/AuthProvider'
 
 export default function SignInPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { toast } = useToast()
   const [isLoading, setIsLoading] = useState(false)
+  const { setUser } = useAuth()
 
   const handleSignIn = async (formData: FormData) => {
     setIsLoading(true)
@@ -23,7 +27,20 @@ export default function SignInPage() {
         password: formData.get('password') as string
       }
 
-      const result = await signIn(data)
+      // Validate input data
+      const validation = signInSchema.safeParse(data)
+      if (!validation.success) {
+        toast({
+          title: 'Validation Error',
+          description: validation.error.errors[0].message,
+          variant: 'destructive'
+        })
+        setIsLoading(false)
+        return
+      }
+
+      const result = await signIn(validation.data)
+      console.log('Sign in result:', result)
 
       if (result.error) {
         toast({
@@ -34,24 +51,29 @@ export default function SignInPage() {
         return
       }
 
-      toast({
-        title: 'Success',
-        description: 'Signed in successfully'
-      })
+      if (result.user) {
+        // Update the user state
+        setUser(result.user)
+        
+        toast({
+          title: 'Success',
+          description: 'Signed in successfully'
+        })
 
-      // Redirect based on role
-      switch (result.role) {
-        case USER_ROLES.SUPERADMIN:
-        case USER_ROLES.BROKER:
-          router.push('/admin/overview')
-          break
-        case USER_ROLES.CLIENT:
-          router.push('/client/overview')
-          break
-        default:
-          router.push('/')
+        // Get return URL if any
+        const callbackUrl = searchParams.get('callbackUrl')
+        if (callbackUrl && !callbackUrl.startsWith('/sign-')) {
+          await router.replace(callbackUrl)
+        } else {
+          // Default routing based on role
+          const route = result.user.role === USER_ROLES.CLIENT 
+            ? '/client/overview'
+            : '/admin/overview'
+          await router.replace(route)
+        }
       }
     } catch (error) {
+      console.error('Sign in error:', error)
       toast({
         title: 'Error',
         description: 'Something went wrong',

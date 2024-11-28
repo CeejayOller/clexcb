@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { useAuth } from '@/components/layout/AuthProvider'
+import { useAuth } from '@/components/providers/AuthProvider'
 import { USER_ROLES } from '@/types/auth'
 
 export default function ClientOverviewPage() {

@@ -1,16 +1,18 @@
-// src/components/auth/RequireAuth.tsx
+// src/components/auth/RequireAuth
 'use client'
 
-import { useAuth } from '@/components/layout/AuthProvider'
+import { useAuth } from '@/components/providers/AuthProvider'
 import { useRouter, usePathname } from 'next/navigation'
 import { useEffect } from 'react'
-import { USER_ROLES, type UserRole } from '@/types/auth'
+import { USER_ROLES, type UserRole, ROLE_PERMISSIONS, type PermissionKey } from '@/types/auth'
 import { canAccessRoute } from '@/lib/utils/permissions'
+import { Loader2 } from 'lucide-react'
+import { useToast } from '@/components/ui/use-toast'
 
 interface RequireAuthProps {
   children: React.ReactNode
   allowedRoles?: UserRole[]
-  requiresPermission?: string
+  requiresPermission?: PermissionKey
 }
 
 export function RequireAuth({ 
@@ -21,53 +23,76 @@ export function RequireAuth({
   const { user, isLoading } = useAuth()
   const router = useRouter()
   const pathname = usePathname()
+  const { toast } = useToast()
 
   useEffect(() => {
-    if (!isLoading) {
+    const checkAuth = async () => {
+      // Wait for loading to complete
+      if (isLoading) return
+
+      console.log('Auth check:', { user, pathname, allowedRoles }) // Debug log
+
+      // No user -> redirect to sign in
       if (!user) {
-        router.push('/sign-in')
+        const returnUrl = encodeURIComponent(pathname)
+        console.log('No user, redirecting to sign in')
+        await router.replace(`/sign-in?callbackUrl=${returnUrl}`)
         return
       }
 
-      // Check role-based access
-      if (allowedRoles && !allowedRoles.includes(user.role)) {
-        // Redirect based on role
-        switch (user.role) {
-          case USER_ROLES.CLIENT:
-            router.push('/client/overview')
-            break
-          case USER_ROLES.BROKER:
-          case USER_ROLES.SUPERADMIN:
-            router.push('/admin/overview')
-            break
-          default:
-            router.push('/')
-        }
+      // Role-based access check
+      if (allowedRoles?.length && !allowedRoles.includes(user.role)) {
+        console.log('Invalid role access:', { userRole: user.role, allowedRoles })
+        
+        const defaultRoute = user.role === USER_ROLES.CLIENT
+          ? '/client/overview'
+          : '/admin/overview'
+
+        toast({
+          title: 'Access Denied',
+          description: 'You do not have permission to access this page.',
+          variant: 'destructive'
+        })
+
+        await router.replace(defaultRoute)
         return
       }
 
-      // Check route access
-      if (!canAccessRoute(user, pathname)) {
-        router.push('/')
+      // Permission-based check
+      if (requiresPermission && !canAccessRoute(user, pathname)) {
+        console.log('Permission denied:', { 
+          user: user.role, 
+          requiredPermission: requiresPermission 
+        })
+        
+        toast({
+          title: 'Permission Denied',
+          description: 'You do not have the required permissions.',
+          variant: 'destructive'
+        })
+
+        await router.replace('/')
         return
       }
     }
-  }, [user, isLoading, router, allowedRoles, pathname])
+
+    checkAuth()
+  }, [user, isLoading, router, allowedRoles, requiresPermission, pathname])
 
   // Show loading state
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-8 h-8 border-2 border-blue-600 rounded-full animate-spin border-t-transparent"></div>
-          <p className="text-gray-500">Loading...</p>
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="flex flex-col items-center gap-2">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <p className="text-muted-foreground">Verifying access...</p>
         </div>
       </div>
     )
   }
 
-  // If no user or not authorized, render nothing while redirecting
-  if (!user || (allowedRoles && !allowedRoles.includes(user.role))) {
+  // Auth check failed
+  if (!user || (allowedRoles?.length && !allowedRoles.includes(user.role))) {
     return null
   }
 

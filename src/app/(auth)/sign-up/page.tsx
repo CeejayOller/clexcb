@@ -1,15 +1,18 @@
 // app/(auth)/sign-up/page.tsx
 'use client'
 
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useToast } from '@/components/ui/use-toast'
 import { AuthCard } from '@/components/auth/AuthCard'
 import { SignUpForm } from '@/components/auth/SignUpForm'
 import { signUp } from '@/app/actions/auth'
 import { useState } from 'react'
+import { signUpSchema } from '@/lib/validations/auth'
+import { USER_ROLES } from '@/types/auth'
 
 export default function SignUpPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { toast } = useToast()
   const [isLoading, setIsLoading] = useState(false)
 
@@ -21,23 +24,20 @@ export default function SignUpPage() {
         email: formData.get('email') as string,
         password: formData.get('password') as string,
         name: formData.get('name') as string,
-        role: formData.get('role') as string,
-        companyName: formData.get('companyName') as string || undefined,
-        companyAddress: formData.get('companyAddress') as string || undefined,
-        contactNumber: formData.get('contactNumber') as string || undefined
+        role: formData.get('role') as string
       }
 
-      // Validate required fields
-      if (!data.name || !data.email || !data.password) {
+      const validation = signUpSchema.safeParse(data)
+      if (!validation.success) {
         toast({
-          title: 'Error',
-          description: 'Please fill in all required fields',
+          title: 'Validation Error',
+          description: validation.error.errors[0].message,
           variant: 'destructive'
         })
         return
       }
 
-      const result = await signUp(data)
+      const result = await signUp(validation.data)
 
       if (result.error) {
         toast({
@@ -53,11 +53,12 @@ export default function SignUpPage() {
         description: 'Account created successfully'
       })
 
-      router.push(data.role === 'BROKER' ? '/admin/overview' : '/client/overview')
+      router.push(data.role === USER_ROLES.BROKER ? '/admin/overview' : '/client/overview')
     } catch (error) {
+      console.error('Sign up error:', error)
       toast({
         title: 'Error',
-        description: 'Something went wrong',
+        description: 'Failed to create account. Please try again.',
         variant: 'destructive'
       })
     } finally {
@@ -66,7 +67,11 @@ export default function SignUpPage() {
   }
 
   return (
-    <AuthCard title="Create your account">
+    <AuthCard 
+      title="Create your account"
+      description="Choose your preferred sign up method"
+      isLoading={isLoading}
+    >
       <SignUpForm action={handleSignUp} isLoading={isLoading} />
     </AuthCard>
   )

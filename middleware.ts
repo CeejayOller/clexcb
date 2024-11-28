@@ -1,86 +1,132 @@
-import { NextResponse } from "next/server";
-import { NextRequest } from "next/server";
-import { jwtVerify } from "jose";
+// middleware.ts
+import { NextResponse } from 'next/server'
+import type { NextRequest } from 'next/server'
+import { verifySessionToken } from '@/lib/auth'
+import { USER_ROLES } from '@/types/auth'
+import type { UserRole } from '@/types/auth'
 
-// Function to verify JWT token
-async function verifyToken(token: string) {
-  try {
-    const secret = new TextEncoder().encode(
-      process.env.JWT_SECRET || "your-default-secret"
-    );
-    const { payload } = await jwtVerify(token, secret);
-    return payload;
-  } catch {
-    return null;
+// Define public routes that don't require authentication
+const PUBLIC_ROUTES = new Set([
+  '/',
+  '/sign-in',
+  '/sign-up',
+  '/password-reset',
+  '/verify-email'
+])
+
+// Define role-based route restrictions
+const ROLE_ROUTE_MAPPING: Record<UserRole, {
+  allowed: string[]
+  restricted: string[]
+  defaultRoute: string
+}> = {
+  [USER_ROLES.CLIENT]: {
+    allowed: ['/client'],
+    restricted: ['/admin'],
+    defaultRoute: '/client/overview'
+  },
+  [USER_ROLES.BROKER]: {
+    allowed: ['/admin'],
+    restricted: ['/client'],
+    defaultRoute: '/admin/overview'
+  },
+  [USER_ROLES.SUPERADMIN]: {
+    allowed: ['/admin', '/client'],
+    restricted: [],
+    defaultRoute: '/admin/overview'
   }
 }
 
-// Define role-based route permissions
-const ROLE_PERMISSIONS = {
-  SUPERADMIN: ["/admin/*"],
-  ADMIN: ["/admin/*", "!/admin/superadmin/*"],
-  USER: ["/client/*"],
-} as const;
-
-// Helper to check if path matches pattern
-function matchesPattern(path: string, pattern: string): boolean {
-  const regexPattern = pattern
-    .replace("*", ".*")
-    .replace("/", "\\/")
-    .replace("!", "^");
-  return new RegExp(regexPattern).test(path);
-}
-
-// Main middleware function
 export async function middleware(request: NextRequest) {
-  // Get token from cookies
-  const token = request.cookies.get("auth-token")?.value;
-  const path = request.nextUrl.pathname;
+  try {
+    const pathname = request.nextUrl.pathname
 
-  // If trying to access auth pages while logged in, redirect to dashboard
-  if (token && (path === "/sign-in" || path === "/sign-up")) {
-    return NextResponse.redirect(new URL("/admin/overview", request.url));
-  }
-
-  // If no token and trying to access protected routes
-  if (!token && (path.startsWith("/admin") || path.startsWith("/client"))) {
-    return NextResponse.redirect(new URL("/sign-in", request.url));
-  }
-
-  // For protected routes, verify role-based access
-  if (token) {
-    const payload = await verifyToken(token);
-
-    if (!payload) {
-      return NextResponse.redirect(new URL("/sign-in", request.url));
+    // Skip middleware for static files and API routes
+    if (pathname.startsWith('/_next') || 
+        pathname.startsWith('/api/public') ||
+        pathname.includes('.')) {
+      return NextResponse.next()
     }
 
-    const userRole = payload.role as keyof typeof ROLE_PERMISSIONS;
-    const permissions = ROLE_PERMISSIONS[userRole] || [];
+    // Get session token
+    const sessionToken = request.cookies.get('session')
 
-    // Check if user has permission for this route
-    const hasPermission = permissions.some((pattern) => {
-      if (pattern.startsWith("!")) {
-        return !matchesPattern(path, pattern.slice(1));
+    // Handle public routes
+    if (PUBLIC_ROUTES.has(pathname)) {
+      // If user is logged in and tries to access auth pages, redirect to their dashboard
+      if (sessionToken?.value) {
+        const tokenData = await verifySessionToken(sessionToken.value)
+        if (tokenData?.role) {
+          const defaultRoute = ROLE_ROUTE_MAPPING[tokenData.role].defaultRoute
+          return NextResponse.redirect(new URL(defaultRoute, request.url))
+        }
       }
-      return matchesPattern(path, pattern);
-    });
-
-    if (!hasPermission) {
-      // Redirect to appropriate dashboard based on role
-      return NextResponse.redirect(
-        new URL(
-          userRole === "USER" ? "/client/overview" : "/admin/overview",
-          request.url
-        )
-      );
+      return NextResponse.next()
     }
-  }
 
-  return NextResponse.next();
+    // No token, redirect to sign in
+    if (!sessionToken?.value) {
+      return redirectToSignIn(request)
+    }
+
+    // Verify token and get user details
+    const tokenData = await verifySessionToken(sessionToken.value)
+    if (!tokenData) {
+      return redirectToSignIn(request)
+    }
+
+    // Get role configuration
+    const userRole = tokenData.role
+    const roleRoutes = ROLE_ROUTE_MAPPING[userRole]
+    if (!roleRoutes) {
+      console.error('Invalid user role:', userRole)
+      return redirectToSignIn(request)
+    }
+
+    // Check route access
+    const isRestrictedRoute = roleRoutes.restricted.some(route => 
+      pathname.startsWith(route)
+    )
+    const isAllowedRoute = roleRoutes.allowed.some(route => 
+      pathname.startsWith(route)
+    )
+
+    // Handle unauthorized access
+    if (isRestrictedRoute || (!isAllowedRoute && !PUBLIC_ROUTES.has(pathname))) {
+      return NextResponse.redirect(new URL(roleRoutes.defaultRoute, request.url))
+    }
+
+    // User is authorized, add role to headers
+    const response = NextResponse.next()
+    response.headers.set('x-user-role', userRole)
+
+    return response
+
+  } catch (error) {
+    console.error('Middleware error:', error)
+    
+    if (error instanceof Error) {
+      if (error.message.includes('authentication') || error.message.includes('jwt')) {
+        return redirectToSignIn(request)
+      }
+      if (error.message.includes('authorization')) {
+        return NextResponse.redirect(new URL('/unauthorized', request.url))
+      }
+    }
+
+    return NextResponse.redirect(new URL('/error', request.url))
+  }
 }
 
-// Configure which routes use the middleware
+function redirectToSignIn(request: NextRequest) {
+  const signInUrl = new URL('/sign-in', request.url)
+  signInUrl.searchParams.set('callbackUrl', request.nextUrl.pathname)
+  return NextResponse.redirect(signInUrl)
+}
+
 export const config = {
-  matcher: ["/admin/:path*", "/client/:path*", "/sign-in", "/sign-up"],
-};
+  matcher: [
+    // Match all paths except static files
+    '/((?!_next/static|_next/image|favicon.ico).*)',
+  ],
+}

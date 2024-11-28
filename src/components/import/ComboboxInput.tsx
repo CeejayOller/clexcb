@@ -16,7 +16,7 @@ import type { CustomEntity } from '@/types/import'
 import { getSavedEntitiesAction } from '@/app/actions/import'
 import { useToast } from '@/components/ui/use-toast'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { useAuth } from '@/components/layout/AuthProvider'
+import { useAuth } from '@/components/providers/AuthProvider'
 import { USER_ROLES } from '@/types/auth'
 
 interface ComboboxInputProps {

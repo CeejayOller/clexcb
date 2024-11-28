@@ -4,66 +4,67 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { Button } from "@/components/ui/button"
-import { AuthFormField } from './AuthCard'
-
-interface SignInFormData {
-  email: string
-  password: string
-}
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Loader2 } from "lucide-react"
 
 interface SignInFormProps {
-    action: (formData: FormData) => Promise<void>
-    isLoading: boolean
-  }
+  action: (formData: FormData) => Promise<void>
+  isLoading: boolean
+}
 
-  export function SignInForm({ action, isLoading }: SignInFormProps) {
-    const [formData, setFormData] = useState<SignInFormData>({
-      email: '',
-      password: ''
-    })
-  
-    const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-      e.preventDefault()
-      const formData = new FormData(e.currentTarget)
-      await action(formData)
-    }
-
-  const updateField = (field: keyof SignInFormData, value: string) => {
-    setFormData(prev => ({ ...prev, [field]: value }))
-  }
+export function SignInForm({ action, isLoading }: SignInFormProps) {
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
-      <AuthFormField
-        name="email"
-        label="Email"
-        type="email"
-        value={formData.email}
-        onChange={(value) => updateField('email', value)}
-        placeholder="Enter your email"
-        required
-      />
+    <form onSubmit={(e) => {
+      e.preventDefault()
+      const formData = new FormData(e.currentTarget)
+      action(formData)
+    }} className="space-y-4">
+      <div className="space-y-2">
+        <Label htmlFor="email">Email</Label>
+        <Input
+          id="email"
+          name="email"
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="Enter your email"
+          required
+          disabled={isLoading}
+        />
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="password">Password</Label>
+        <Input
+          id="password"
+          name="password"
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder="Enter your password"
+          required
+          disabled={isLoading}
+        />
+      </div>
 
-      <AuthFormField
-        name="password"
-        label="Password"
-        type="password"
-        value={formData.password}
-        onChange={(value) => updateField('password', value)}
-        placeholder="Enter your password"
-        required
-      />
-
-      <Button
-        type="submit"
-        className="w-full"
-        disabled={isLoading}
+      <Button 
+        type="submit" 
+        className="w-full" 
+        disabled={isLoading || !email || !password}
       >
+        {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
         {isLoading ? 'Signing in...' : 'Sign in'}
       </Button>
 
-      <div className="mt-4 text-center">
-        <Link href="/sign-up" className="text-sm text-blue-600 hover:text-blue-500">
+      <div className="text-center text-sm">
+        <Link 
+          href="/sign-up" 
+          className="text-primary hover:underline"
+          tabIndex={isLoading ? -1 : 0}
+        >
           Don't have an account? Sign up
         </Link>
       </div>

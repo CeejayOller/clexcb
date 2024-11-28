@@ -1,3 +1,5 @@
+// prisma/schema.prisma
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -7,102 +9,1044 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// Core User Management
 model User {
-  id             String      @id @default(cuid())
-  email          String      @unique
-  name           String
-  password       String
-  role           String      @default("CLIENT")
-  companyName    String?
-  companyAddress String?
-  contactNumber  String?
-  createdAt      DateTime    @default(now())
-  updatedAt      DateTime    @updatedAt
-  consignees     Consignee[]
-  exporters      Exporter[]
-  shipments      Shipment[]
+  id        String    @id @default(cuid())
+  email     String    @unique
+  password  String
+  name      String
+  role      UserRole  @default(CLIENT)
+  profile   Json? // Profile settings, preferences
+  isActive  Boolean   @default(true)
+  lastLogin DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
-  @@index([email])
+  // Relations
+  client        Client?
+  broker        Broker?
+  activities    Activity[]
+  notifications Notification[]
+  documents     Document[]     @relation("UploadedBy")
+  reviews       Document[]     @relation("ReviewedBy")
+  tasks         Task[]         @relation("AssignedTo")
+  comments      Comment[]
 }
 
-model Consignee {
-  id              String              @id @default(cuid())
+model Client {
+  id              String     @id @default(cuid())
+  userId          String     @unique
+  type            ClientType
   name            String
   registeredName  String
+  tinNumber       String?
   businessAddress String
-  tin             String              @unique
-  brn             String
   contactPerson   String
   contactNumber   String
   email           String
-  isActive        Boolean             @default(true)
-  createdAt       DateTime            @default(now())
-  updatedAt       DateTime            @updatedAt
-  userId          String
-  createdBy       User                @relation(fields: [userId], references: [id])
-  documents       ConsigneeDocument[]
-  shipments       Shipment[]
-
-  @@index([name, tin])
-  @@index([userId])
-}
-
-model ConsigneeDocument {
-  id          String    @id @default(cuid())
-  consigneeId String
-  name        String
-  fileUrl     String
-  uploadedAt  DateTime  @default(now())
-  expiryDate  DateTime?
-  isVerified  Boolean   @default(false)
-  consignee   Consignee @relation(fields: [consigneeId], references: [id])
-
-  @@index([consigneeId])
-}
-
-model Exporter {
-  id              String     @id @default(cuid())
-  name            String
-  businessAddress String
-  contactPerson   String
-  email           String
-  contactNumber   String
+  website         String?
+  industryType    String?
+  taxSettings     Json? // VAT status, tax preferences
+  creditSettings  Json? // Credit limits, payment terms
   isActive        Boolean    @default(true)
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
-  userId          String
-  createdBy       User       @relation(fields: [userId], references: [id])
-  shipments       Shipment[]
 
-  @@index([name])
+  // Relations
+  user          User               @relation(fields: [userId], references: [id])
+  brokers       BrokerAssignment[]
+  contacts      Contact[]
+  shipments     Shipment[]
+  opportunities Opportunity[]
+  salesOrders   SalesOrder[]
+  invoices      Invoice[]          @relation("BillTo")
+  documents     Document[]         @relation("ClientDocuments")
+  Quotation     Quotation[]
+
+  @@index([tinNumber])
+}
+
+model Broker {
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  employeeId     String? // Internal employee ID
+  designation    String?
+  specialization String[] // Areas of expertise
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Relations
+  user        User               @relation(fields: [userId], references: [id])
+  assignments BrokerAssignment[]
+  shipments   Shipment[]
+  tasks       Task[]
+  activities  Activity[]
+
+  @@index([employeeId])
+}
+
+model BrokerAssignment {
+  id         String   @id @default(cuid())
+  brokerId   String
+  clientId   String
+  isPrimary  Boolean  @default(false)
+  assignedAt DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  // Relations
+  broker Broker @relation(fields: [brokerId], references: [id])
+  client Client @relation(fields: [clientId], references: [id])
+
+  @@unique([brokerId, clientId])
+}
+
+// CRM Models
+model Contact {
+  id              String   @id @default(cuid())
+  clientId        String
+  name            String
+  position        String?
+  email           String?
+  phone           String?
+  isDecisionMaker Boolean  @default(false)
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  client     Client     @relation(fields: [clientId], references: [id])
+  activities Activity[]
+
+  @@index([clientId])
+}
+
+model Opportunity {
+  id                String            @id @default(cuid())
+  clientId          String
+  title             String
+  description       String?
+  status            OpportunityStatus
+  stage             OpportunityStage
+  value             Float?
+  probability       Float? // Success probability percentage
+  expectedCloseDate DateTime?
+  notes             String?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  // Relations
+  client     Client      @relation(fields: [clientId], references: [id])
+  activities Activity[]
+  quotations Quotation[]
+
+  @@index([clientId])
+  @@index([status])
+}
+
+// Activity Tracking
+model Activity {
+  id          String         @id @default(cuid())
+  userId      String
+  entityType  String // The type of entity this activity relates to
+  entityId    String // The ID of the related entity
+  type        ActivityType
+  title       String
+  description String?
+  dueDate     DateTime?
+  status      ActivityStatus
+  priority    Priority
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  // Relations
+  user        User         @relation(fields: [userId], references: [id])
+  broker      Broker?      @relation(fields: [brokerId], references: [id])
+  contact     Contact?     @relation(fields: [contactId], references: [id])
+  opportunity Opportunity? @relation(fields: [opportunityId], references: [id])
+
+  brokerId      String?
+  contactId     String?
+  opportunityId String?
+  Shipment      Shipment? @relation(fields: [shipmentId], references: [id])
+  shipmentId    String?
+
+  @@index([entityType, entityId])
+  @@index([userId])
+  @@index([status])
+}
+
+// Enums
+enum UserRole {
+  SUPERADMIN
+  BROKER
+  CLIENT
+}
+
+enum ClientType {
+  IMPORTER
+  EXPORTER
+  BOTH
+}
+
+enum OpportunityStatus {
+  OPEN
+  WON
+  LOST
+  CANCELLED
+}
+
+enum OpportunityStage {
+  QUALIFICATION
+  PROPOSAL
+  NEGOTIATION
+  CLOSING
+}
+
+enum ActivityType {
+  CALL
+  MEETING
+  EMAIL
+  TASK
+  NOTE
+}
+
+enum ActivityStatus {
+  PLANNED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+// Continuing schema.prisma with Sales & Quotation models
+
+model Quotation {
+  id            String      @id @default(cuid())
+  opportunityId String?
+  clientId      String
+  number        String      @unique // Quote number
+  status        QuoteStatus
+  validUntil    DateTime
+  terms         String?
+  totalAmount   Float
+  notes         String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  // Relations
+  opportunity Opportunity?    @relation(fields: [opportunityId], references: [id])
+  client      Client          @relation(fields: [clientId], references: [id])
+  items       QuotationItem[]
+  salesOrder  SalesOrder?
+
+  @@index([clientId])
+  @@index([status])
+}
+
+model QuotationItem {
+  id          String @id @default(cuid())
+  quotationId String
+  productId   String
+  description String
+  quantity    Int
+  unitPrice   Float
+  discount    Float?
+  taxes       Json? // Tax details
+  total       Float
+
+  // Relations
+  quotation Quotation @relation(fields: [quotationId], references: [id])
+  product   Product   @relation(fields: [productId], references: [id])
+
+  @@index([quotationId])
+}
+
+model SalesOrder {
+  id          String      @id @default(cuid())
+  quotationId String?     @unique
+  clientId    String
+  number      String      @unique // SO number
+  status      OrderStatus
+  totalAmount Float
+  notes       String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  // Relations
+  quotation Quotation?       @relation(fields: [quotationId], references: [id])
+  client    Client           @relation(fields: [clientId], references: [id])
+  items     SalesOrderItem[]
+  invoices  Invoice[]
+  shipment  Shipment?
+
+  @@index([clientId])
+  @@index([status])
+}
+
+model SalesOrderItem {
+  id          String @id @default(cuid())
+  orderId     String
+  productId   String
+  description String
+  quantity    Int
+  unitPrice   Float
+  discount    Float?
+  taxes       Json?
+  total       Float
+
+  // Relations
+  order   SalesOrder @relation(fields: [orderId], references: [id])
+  product Product    @relation(fields: [productId], references: [id])
+
+  @@index([orderId])
+}
+
+model Product {
+  id          String      @id @default(cuid())
+  code        String      @unique
+  name        String
+  type        ProductType
+  category    String?
+  description String?
+  unitPrice   Float
+  taxes       Json? // Applicable taxes
+  isActive    Boolean     @default(true)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  // Relations
+  quotationItems QuotationItem[]
+  orderItems     SalesOrderItem[]
+
+  @@index([code])
+  @@index([type])
+}
+
+enum QuoteStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  REJECTED
+  EXPIRED
+}
+
+enum OrderStatus {
+  DRAFT
+  CONFIRMED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum ProductType {
+  SERVICE
+  GOODS
+  BUNDLE
+}
+
+// Continuing schema.prisma with Customs & Shipment models
+
+model Shipment {
+  id              String         @id @default(cuid())
+  referenceNumber String         @unique
+  clientId        String
+  brokerId        String
+  salesOrderId    String?        @unique
+  type            ShipmentType
+  status          ShipmentStatus
+  mode            TransportMode
+
+  // Core Details
+  consignee Json // Consignee details
+  shipper   Json // Shipper details
+  notify    Json? // Notify party details
+
+  // Cargo Details
+  cargo            Json // Cargo details including HS codes
+  packageDetails   Json // Package information
+  containerDetails Json? // Container information if applicable
+
+  // Routing Information
+  portOfLoading   String
+  portOfDischarge String
+  vessel          String?
+  voyageNumber    String?
+  eta             DateTime?
+  ata             DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  client       Client            @relation(fields: [clientId], references: [id])
+  broker       Broker            @relation(fields: [brokerId], references: [id])
+  salesOrder   SalesOrder?       @relation(fields: [salesOrderId], references: [id])
+  customsEntry CustomsEntry?
+  documents    Document[]
+  workflow     WorkflowStage[]
+  sof          StatementOfFacts?
+  costs        ShipmentCost[]
+  invoices     Invoice[]
+  activities   Activity[]
+
+  @@index([clientId])
+  @@index([brokerId])
+  @@index([status])
+}
+
+model CustomsEntry {
+  id          String        @id @default(cuid())
+  shipmentId  String        @unique
+  entryNumber String        @unique
+  regime      CustomsRegime
+  status      CustomsStatus
+
+  // Declaration Details
+  declaration    Json // Customs declaration details
+  classification Json // HS Code classifications
+  valuation      Json // Value declaration
+  assessment     Json? // Customs assessment
+
+  // Financial Details
+  dutyAmount   Float
+  taxAmount    Float
+  otherCharges Json? // Additional fees/charges
+
+  // Processing Dates
+  lodgementDate  DateTime?
+  assessmentDate DateTime?
+  paymentDate    DateTime?
+  releaseDate    DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  shipment  Shipment   @relation(fields: [shipmentId], references: [id])
+  documents Document[]
+  payments  Payment[]
+
+  @@index([entryNumber])
+  @@index([status])
+}
+
+model StatementOfFacts {
+  id              String    @id @default(cuid())
+  shipmentId      String    @unique
+  referenceNumber String    @unique
+  status          SOFStatus
+  timeline        Json // Chronological events
+  finalNotes      String?
+  finalizedAt     DateTime?
+  finalizedBy     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  shipment Shipment   @relation(fields: [shipmentId], references: [id])
+  events   SOFEvent[]
+
+  @@index([status])
+}
+
+model SOFEvent {
+  id          String       @id @default(cuid())
+  sofId       String
+  type        SOFEventType
+  description String
+  timestamp   DateTime
+  location    String?
+  attachments Json? // Document references
+  metadata    Json? // Additional event data
+  createdBy   String
+  createdAt   DateTime     @default(now())
+
+  // Relations
+  sof      StatementOfFacts @relation(fields: [sofId], references: [id])
+  comments Comment[]
+
+  @@index([sofId])
+  @@index([type])
+}
+
+model ShipmentCost {
+  id           String    @id @default(cuid())
+  shipmentId   String
+  type         CostType
+  description  String
+  amount       Float
+  currency     String
+  exchangeRate Float?
+  isVerified   Boolean   @default(false)
+  verifiedBy   String?
+  verifiedAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  shipment Shipment @relation(fields: [shipmentId], references: [id])
+
+  @@index([shipmentId])
+  @@index([type])
+}
+
+// Enums for Customs & Shipment
+enum ShipmentType {
+  IMPORT
+  EXPORT
+  TRANSIT
+}
+
+enum ShipmentStatus {
+  DRAFT
+  BOOKING
+  PROCESSING
+  IN_TRANSIT
+  CUSTOMS
+  DELIVERY
+  COMPLETED
+  CANCELLED
+}
+
+enum TransportMode {
+  SEA
+  AIR
+  LAND
+}
+
+enum CustomsRegime {
+  FORMAL_ENTRY
+  INFORMAL_ENTRY
+  WAREHOUSING
+  TRANSIT
+  DRAWBACK
+}
+
+enum CustomsStatus {
+  DRAFT
+  LODGED
+  ASSESSED
+  PAID
+  RELEASED
+  CANCELLED
+}
+
+enum SOFStatus {
+  DRAFT
+  IN_PROGRESS
+  FINALIZED
+  AMENDED
+}
+
+enum SOFEventType {
+  ARRIVAL
+  CUSTOMS_FILING
+  ASSESSMENT
+  PAYMENT
+  INSPECTION
+  RELEASE
+  DELIVERY
+  ISSUE
+  OTHER
+}
+
+enum CostType {
+  FREIGHT
+  CUSTOMS_DUTY
+  VAT
+  HANDLING
+  STORAGE
+  DELIVERY
+  DOCUMENTATION
+  OTHER
+}
+
+// Continuing schema.prisma with Financial & Accounting models
+
+model Invoice {
+  id           String        @id @default(cuid())
+  number       String        @unique
+  clientId     String
+  shipmentId   String?
+  salesOrderId String?
+  type         InvoiceType
+  status       InvoiceStatus
+
+  // Financial Details
+  currency     String
+  exchangeRate Float?
+  subtotal     Float
+  taxAmount    Float
+  totalAmount  Float
+
+  // Payment Terms
+  dueDate DateTime
+  terms   String?
+  notes   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  client      Client        @relation("BillTo", fields: [clientId], references: [id])
+  shipment    Shipment?     @relation(fields: [shipmentId], references: [id])
+  salesOrder  SalesOrder?   @relation(fields: [salesOrderId], references: [id])
+  items       InvoiceItem[]
+  payments    Payment[]
+  creditNotes CreditNote[]
+
+  @@index([clientId])
+  @@index([status])
+}
+
+model InvoiceItem {
+  id          String @id @default(cuid())
+  invoiceId   String
+  description String
+  quantity    Float
+  unitPrice   Float
+  discount    Float?
+  taxRate     Float
+  taxAmount   Float
+  totalAmount Float
+
+  createdAt DateTime @default(now())
+
+  // Relations
+  invoice Invoice @relation(fields: [invoiceId], references: [id])
+
+  @@index([invoiceId])
+}
+
+model Payment {
+  id             String        @id @default(cuid())
+  invoiceId      String
+  customsEntryId String?
+  amount         Float
+  currency       String
+  exchangeRate   Float?
+  method         PaymentMethod
+  reference      String?
+  status         PaymentStatus
+  notes          String?
+
+  receivedAt DateTime?
+  clearedAt  DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  // Relations
+  invoice      Invoice       @relation(fields: [invoiceId], references: [id])
+  customsEntry CustomsEntry? @relation(fields: [customsEntryId], references: [id])
+
+  @@index([invoiceId])
+  @@index([status])
+}
+
+model CreditNote {
+  id        String           @id @default(cuid())
+  invoiceId String
+  number    String           @unique
+  reason    String
+  amount    Float
+  status    CreditNoteStatus
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  invoice Invoice @relation(fields: [invoiceId], references: [id])
+
+  @@index([invoiceId])
+}
+
+// Accounting Models
+model JournalEntry {
+  id          String        @id @default(cuid())
+  number      String        @unique
+  date        DateTime
+  reference   String?
+  description String?
+  status      JournalStatus
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  items JournalItem[]
+
+  @@index([date])
+  @@index([status])
+}
+
+model JournalItem {
+  id          String  @id @default(cuid())
+  journalId   String
+  accountId   String
+  description String?
+  debit       Float   @default(0)
+  credit      Float   @default(0)
+
+  // Relations
+  journal JournalEntry @relation(fields: [journalId], references: [id])
+  account Account      @relation(fields: [accountId], references: [id])
+
+  @@index([journalId])
+  @@index([accountId])
+}
+
+model Account {
+  id          String          @id @default(cuid())
+  code        String          @unique
+  name        String
+  type        AccountType
+  category    AccountCategory
+  description String?
+  isActive    Boolean         @default(true)
+
+  // Relations
+  journalItems JournalItem[]
+
+  @@index([code])
+  @@index([type])
+}
+
+// Financial Enums
+enum InvoiceType {
+  SERVICE
+  CUSTOMS
+  DISBURSEMENT
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+enum PaymentMethod {
+  BANK_TRANSFER
+  CHECK
+  CASH
+  ONLINE
+}
+
+enum PaymentStatus {
+  PENDING
+  RECEIVED
+  CLEARED
+  BOUNCED
+  CANCELLED
+}
+
+enum CreditNoteStatus {
+  DRAFT
+  ISSUED
+  APPLIED
+  CANCELLED
+}
+
+enum JournalStatus {
+  DRAFT
+  POSTED
+  REVERSED
+}
+
+enum AccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  REVENUE
+  EXPENSE
+}
+
+enum AccountCategory {
+  CASH_AND_BANK
+  RECEIVABLES
+  PAYABLES
+  SALES
+  COST_OF_SALES
+  OPERATING_EXPENSE
+  TAX
+  OTHER
+}
+
+// Completing schema.prisma with remaining models
+
+// Document Management
+model Document {
+  id          String           @id @default(cuid())
+  type        DocumentType
+  category    DocumentCategory
+  title       String
+  description String?
+  fileUrl     String
+  fileSize    Int
+  mimeType    String
+
+  // Document Status
+  status     DocumentStatus
+  isRequired Boolean        @default(false)
+  expiryDate DateTime?
+
+  // Ownership & Verification
+  uploadedBy String
+  uploadedAt DateTime  @default(now())
+  reviewedBy String?
+  reviewedAt DateTime?
+  verifiedAt DateTime?
+
+  // Entity Reference
+  entityType String // shipment, client, customs, etc.
+  entityId   String
+
+  // Relations
+  uploader     User              @relation("UploadedBy", fields: [uploadedBy], references: [id])
+  reviewer     User?             @relation("ReviewedBy", fields: [reviewedBy], references: [id])
+  client       Client?           @relation("ClientDocuments", fields: [entityId], references: [id])
+  shipment     Shipment?         @relation(fields: [shipmentId], references: [id])
+  customsEntry CustomsEntry?     @relation(fields: [customsEntryId], references: [id])
+  versions     DocumentVersion[]
+
+  shipmentId     String?
+  customsEntryId String?
+
+  @@index([entityType, entityId])
+  @@index([type])
+  @@index([status])
+}
+
+model DocumentVersion {
+  id            String   @id @default(cuid())
+  documentId    String
+  versionNumber Int
+  fileUrl       String
+  fileSize      Int
+  mimeType      String
+  changes       String?
+  uploadedBy    String
+  uploadedAt    DateTime @default(now())
+
+  // Relations
+  document Document @relation(fields: [documentId], references: [id])
+
+  @@index([documentId])
+}
+
+// Workflow Management
+model WorkflowStage {
+  id          String         @id @default(cuid())
+  shipmentId  String
+  name        String
+  description String?
+  status      WorkflowStatus
+  sequence    Int
+
+  // Stage Requirements
+  requiredDocs  Json? // Required documents
+  requiredTasks Json? // Required tasks
+  validation    Json? // Validation rules
+
+  startedAt   DateTime?
+  completedAt DateTime?
+
+  // Relations
+  shipment Shipment @relation(fields: [shipmentId], references: [id])
+  tasks    Task[]
+
+  @@index([shipmentId])
+  @@index([status])
+}
+
+model Task {
+  id          String     @id @default(cuid())
+  stageId     String
+  title       String
+  description String?
+  type        TaskType
+  status      TaskStatus
+  priority    Priority
+
+  assignedTo  String?
+  dueDate     DateTime?
+  completedAt DateTime?
+
+  // Relations
+  stage     WorkflowStage   @relation(fields: [stageId], references: [id])
+  assignee  User?           @relation("AssignedTo", fields: [assignedTo], references: [id])
+  comments  Comment[]
+  checklist TaskChecklist[]
+  Broker    Broker?         @relation(fields: [brokerId], references: [id])
+  brokerId  String?
+
+  @@index([stageId])
+  @@index([status])
+}
+
+model TaskChecklist {
+  id          String    @id @default(cuid())
+  taskId      String
+  item        String
+  isCompleted Boolean   @default(false)
+  completedAt DateTime?
+
+  // Relations
+  task Task @relation(fields: [taskId], references: [id])
+
+  @@index([taskId])
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  content   String
+  createdBy String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Polymorphic Relations
+  entityType String // task, sofEvent, etc.
+  entityId   String
+
+  // Relations
+  author   User      @relation(fields: [createdBy], references: [id])
+  task     Task?     @relation(fields: [taskId], references: [id])
+  sofEvent SOFEvent? @relation(fields: [sofEventId], references: [id])
+
+  taskId     String?
+  sofEventId String?
+
+  @@index([entityType, entityId])
+}
+
+// Notification System
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  type      NotificationType
+  title     String
+  message   String
+  priority  Priority
+  metadata  Json? // Additional context data
+  isRead    Boolean          @default(false)
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  // Relations
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([type])
+}
+
+// System Settings & Configuration
+model SystemSetting {
+  id          String   @id @default(cuid())
+  category    String
+  key         String   @unique
+  value       Json
+  description String?
+  isEncrypted Boolean  @default(false)
+  updatedAt   DateTime @updatedAt
+
+  @@index([category])
+}
+
+// E-Signature
+model Signature {
+  id          String        @id @default(cuid())
+  userId      String
+  type        SignatureType
+  imageUrl    String?
+  certificate Json? // Digital certificate details
+  isDefault   Boolean       @default(false)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
   @@index([userId])
 }
 
-model Shipment {
-  id                   String     @id @default(uuid())
-  referenceNumber      String     @unique
-  freightType          String
-  status               String
-  consigneeId          String?
-  exporterId           String?
-  userId               String
-  consigneeData        String
-  exporterData         String
-  shipmentDetails      String
-  documentsData        String
-  computations         String?
-  timelineData         String
-  notesData            String
-  cargoData            String?    @default("[]")
-  statementOfFactsData String?    @default("[]")
-  createdAt            DateTime   @default(now())
-  updatedAt            DateTime   @updatedAt
-  completionDate       DateTime?
-  isLocked             Boolean    @default(false)
-  consignee            Consignee? @relation(fields: [consigneeId], references: [id])
-  exporter             Exporter?  @relation(fields: [exporterId], references: [id])
-  createdBy            User       @relation(fields: [userId], references: [id])
+// Additional Enums
+enum DocumentType {
+  INVOICE
+  PACKING_LIST
+  BILL_OF_LADING
+  AIRWAY_BILL
+  COMMERCIAL_INVOICE
+  CERTIFICATE_ORIGIN
+  IMPORT_LICENSE
+  INSURANCE
+  PAYMENT_PROOF
+  CONTRACT
+  OTHER
+}
 
-  @@index([userId])
-  @@index([consigneeId, exporterId])
+enum DocumentCategory {
+  SHIPPING
+  CUSTOMS
+  COMMERCIAL
+  FINANCIAL
+  LEGAL
+  OTHER
+}
+
+enum DocumentStatus {
+  DRAFT
+  UPLOADED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  EXPIRED
+}
+
+enum WorkflowStatus {
+  PENDING
+  IN_PROGRESS
+  ON_HOLD
+  COMPLETED
+  CANCELLED
+}
+
+enum TaskType {
+  DOCUMENTATION
+  CUSTOMS
+  PAYMENT
+  COORDINATION
+  REVIEW
+  OTHER
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  REVIEW
+  COMPLETED
+  CANCELLED
+}
+
+enum NotificationType {
+  TASK_ASSIGNED
+  DOCUMENT_UPLOADED
+  DOCUMENT_APPROVED
+  WORKFLOW_UPDATE
+  PAYMENT_RECEIVED
+  DEADLINE_REMINDER
+  SYSTEM_ALERT
+}
+
+enum SignatureType {
+  ELECTRONIC
+  DIGITAL
+  HANDWRITTEN
 }

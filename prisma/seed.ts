@@ -1,156 +1,120 @@
-import { PrismaClient } from "@prisma/client";
-import { hash } from "bcryptjs";
-import { USER_ROLES } from "@/types/auth";
+// prisma/seed.ts
+import { PrismaClient } from '@prisma/client'
+import * as bcrypt from 'bcryptjs'
 
-const prisma = new PrismaClient();
+const prisma = new PrismaClient()
+
+async function hashPassword(password: string): Promise<string> {
+  return bcrypt.hash(password, 12)
+}
 
 async function main() {
-  try {
-    // Create default broker admin
-    const hashedPassword = await hash("admin123", 12);
-    const admin = await prisma.user.upsert({
-      where: { email: "admin@clexcb.com" },
-      update: {},
-      create: {
-        email: "admin@clexcb.com",
-        name: "Admin User",
-        password: hashedPassword,
-        role: "BROKER",
-        companyName: "CLEX Customs Brokerage",
-        companyAddress: "Manila, Philippines",
-        contactNumber: "+63 123 456 7890",
-      },
-    });
-    console.log("Created admin user:", admin);
+  const hashedAdminPassword = await hashPassword('adminpassword123')
+  const hashedClientPassword = await hashPassword('clientpassword123')
+  const hashedBrokerPassword = await hashPassword('brokerpassword123')
 
-    // Create some sample consignees
-    const consignees = await Promise.all([
-      prisma.consignee.upsert({
-        where: { tin: "123-456-789-000" },
-        update: {},
+  // Create admin user
+  const admin = await prisma.user.upsert({
+    where: { email: 'admin@clexcb.com' },
+    update: {},
+    create: {
+      email: 'admin@clexcb.com',
+      password: hashedAdminPassword,
+      name: "CLEX Admin",
+      role: 'SUPERADMIN',
+      isActive: true,
+      profile: {}
+    }
+  });
+
+  // Create client with included user relation
+  const client = await prisma.client.create({
+    data: {
+      user: {
         create: {
-          name: "ABC Manufacturing Co.",
-          registeredName: "ABC Manufacturing Corporation",
-          businessAddress: "Makati City, Philippines",
-          tin: "123-456-789-000",
-          brn: "BRN123456",
-          contactPerson: "John Doe",
-          contactNumber: "+63 987 654 3210",
-          email: "john@abcmfg.com",
-          userId: admin.id,
-        },
-      }),
-      prisma.consignee.upsert({
-        where: { tin: "987-654-321-000" },
-        update: {},
-        create: {
-          name: "XYZ Trading Inc.",
-          registeredName: "XYZ Trading Incorporated",
-          businessAddress: "Pasig City, Philippines",
-          tin: "987-654-321-000",
-          brn: "BRN987654",
-          contactPerson: "Jane Smith",
-          contactNumber: "+63 912 345 6789",
-          email: "jane@xyztrading.com",
-          userId: admin.id,
-        },
-      }),
-    ]);
-    console.log("Created sample consignees:", consignees);
-
-    // Create some sample exporters
-    const exporters = await Promise.all([
-      prisma.exporter.create({
-        data: {
-          name: "China Exports Ltd.",
-          businessAddress: "Shanghai, China",
-          contactPerson: "Li Wei",
-          contactNumber: "+86 123 4567 8900",
-          email: "li.wei@chinaexports.com",
-          userId: admin.id,
-        },
-      }),
-      prisma.exporter.create({
-        data: {
-          name: "Korea Trade Co.",
-          businessAddress: "Seoul, South Korea",
-          contactPerson: "Kim Min-ji",
-          contactNumber: "+82 10 1234 5678",
-          email: "kim.minji@koreatrade.co.kr",
-          userId: admin.id,
-        },
-      }),
-    ]);
-    console.log("Created sample exporters:", exporters);
-
-    // Create a sample shipment
-    const shipment = await prisma.shipment.create({
-      data: {
-        referenceNumber: "CLEX-IMS24-0001",
-        freightType: "IMS",
-        status: "CLIENT_DETAILS",
-        userId: admin.id,
-        consigneeId: consignees[0].id,
-        exporterId: exporters[0].id,
-        consigneeData: JSON.stringify({
-          name: consignees[0].name,
-          address: consignees[0].businessAddress,
-        }),
-        exporterData: JSON.stringify({
-          name: exporters[0].name,
-          address: exporters[0].businessAddress,
-        }),
-        shipmentDetails: JSON.stringify({
-          bl_number: "BL123456789",
-          vessel_name: "EVER GIVEN",
-          registry_number: "REG123456",
-          voyage_number: "V2024001",
-          container_number: "CONT123456",
-          port_of_origin: "Shanghai, China",
-          port_of_discharge: "Manila, Philippines",
-          eta: "2024-03-15T08:00:00Z",
-          ata: "",
-          description_of_goods: "Industrial machinery parts",
-          volume: "40ft container",
-        }),
-        documentsData: JSON.stringify([
-          {
-            name: "Bill of Lading",
-            status: "not_uploaded",
-            isVerified: false,
-            isRequired: true,
-            files: [],
-          },
-          {
-            name: "Commercial Invoice",
-            status: "not_uploaded",
-            isVerified: false,
-            isRequired: true,
-            files: [],
-          },
-        ]),
-        timelineData: JSON.stringify([
-          {
-            stage: "CLIENT_DETAILS",
-            status: "in_progress",
-            timestamp: new Date().toISOString(),
-          },
-        ]),
-        notesData: JSON.stringify([]),
+          email: 'client@example.com',
+          password: hashedClientPassword,
+          name: 'Example Client',
+          role: 'CLIENT',
+          isActive: true,
+          profile: {
+            tin: '123-456-789',
+            industryType: 'Manufacturing'
+          }
+        }
       },
-    });
-    console.log("Created sample shipment:", shipment);
-  } catch (error) {
-    console.error("Error seeding database:", error);
-    throw error;
-  }
+      type: 'IMPORTER',
+      name: 'Example Company',
+      registeredName: 'Example Company Inc.',
+      tinNumber: '123-456-789',
+      businessAddress: 'Manila, Philippines',
+      contactPerson: 'John Doe',
+      contactNumber: '+63 912 345 6789',
+      email: 'contact@example.com',
+      taxSettings: {},
+      creditSettings: {}
+    },
+    include: {
+      user: true // Include the user relation
+    }
+  });
+
+  // Create broker with included user relation
+  const broker = await prisma.broker.create({
+    data: {
+      user: {
+        create: {
+          email: 'broker@clexcb.com',
+          password: hashedBrokerPassword,
+          name: 'CLEX Broker',
+          role: 'BROKER',
+          isActive: true,
+          profile: {
+            employeeId: 'BR001',
+            specialization: ['Import', 'PEZA']
+          }
+        }
+      },
+      employeeId: 'BR001',
+      designation: 'Senior Broker',
+      specialization: ['Import', 'PEZA'],
+      isActive: true
+    },
+    include: {
+      user: true // Include the user relation
+    }
+  });
+
+  // Create sample shipment
+  const shipment = await prisma.shipment.create({
+    data: {
+      referenceNumber: 'SHIP-2024-001',
+      type: 'IMPORT',
+      status: 'DRAFT',
+      mode: 'SEA',
+      consignee: {},
+      shipper: {},
+      cargo: {},
+      packageDetails: {},
+      portOfLoading: 'Shanghai',
+      portOfDischarge: 'Manila',
+      clientId: client.id,
+      brokerId: broker.id,
+    }
+  });
+
+  console.log('Seed data created successfully!');
+  console.log('Admin:', { id: admin.id, email: admin.email, role: admin.role });
+  console.log('Client:', { id: client.id, email: client.user.email, role: client.user.role });
+  console.log('Broker:', { id: broker.id, email: broker.user.email, role: broker.user.role });
+  console.log('Shipment:', { id: shipment.id, reference: shipment.referenceNumber });
 }
 
 main()
   .catch((e) => {
-    console.error(e);
-    process.exit(1);
+    console.error('Error while seeding database:', e)
+    process.exit(1)
   })
   .finally(async () => {
-    await prisma.$disconnect();
-  });
+    await prisma.$disconnect()
+  })

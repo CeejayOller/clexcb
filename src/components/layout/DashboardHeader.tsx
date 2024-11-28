@@ -3,8 +3,8 @@
 
 import React from 'react';
 import { useRouter } from 'next/navigation';
-import { signOutAction } from '@/app/actions/auth';
-import { useAuth } from '@/components/layout/AuthProvider';
+import { signOut } from '@/app/actions/auth';
+import { useAuth } from '@/components/providers/AuthProvider';
 import { Button } from '@/components/ui/button';
 import { USER_ROLES } from '@/types/auth';
 import {
@@ -33,7 +33,6 @@ export default function DashboardHeader() {
 
   const handleSignOut = async () => {
     try {
-      await signOutAction();
       await signOut();
       router.push('/sign-in');
     } catch (error) {

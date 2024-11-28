@@ -1,59 +1,42 @@
 // components/auth/AuthCard.tsx
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { Loader2 } from "lucide-react"
 
 interface AuthCardProps {
-  title: string;
-  children: React.ReactNode;
+  title: string
+  description?: string
+  children: React.ReactNode
+  footer?: React.ReactNode
+  isLoading?: boolean
 }
 
-export function AuthCard({ title, children }: AuthCardProps) {
+export function AuthCard({ 
+  title, 
+  description, 
+  children, 
+  footer,
+  isLoading 
+}: AuthCardProps) {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-      <Card className="w-full max-w-md">
-        <CardHeader>
-          <CardTitle className="text-center">{title}</CardTitle>
+    <div className="container flex h-screen w-screen flex-col items-center justify-center">
+      <Card className="w-full max-w-lg">
+        <CardHeader className="space-y-1">
+          <CardTitle className="text-2xl text-center">
+            {isLoading ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              title
+            )}
+          </CardTitle>
+          {description && (
+            <CardDescription className="text-center">
+              {description}
+            </CardDescription>
+          )}
         </CardHeader>
         <CardContent>{children}</CardContent>
+        {footer && <CardFooter>{footer}</CardFooter>}
       </Card>
     </div>
-  );
-}
-
-// components/auth/AuthFormField.tsx
-import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
-
-interface AuthFormFieldProps {
-  name: string;
-  label: string;
-  type?: string;
-  value: string;
-  onChange: (value: string) => void;
-  placeholder?: string;
-  required?: boolean;
-}
-
-export function AuthFormField({
-  name,
-  label,
-  type = "text",
-  value,
-  onChange,
-  placeholder,
-  required = false,
-}: AuthFormFieldProps) {
-  return (
-    <div className="space-y-2">
-      <Label htmlFor={name}>{label}</Label>
-      <Input
-        id={name}
-        name={name}
-        type={type}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        required={required}
-      />
-    </div>
-  );
+  )
 }

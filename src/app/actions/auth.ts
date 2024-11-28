@@ -1,151 +1,193 @@
-// app/actions/auth.ts
-"use server";
+// src/app/actions/auth
+'use server'
 
-import { cookies } from "next/headers";
-import { revalidatePath } from "next/cache";
-import { prisma } from "@/lib/prisma";
-import {
-  hashPassword,
-  comparePasswords,
-  createSession,
-  validateSession,
-} from "@/lib/auth";
-import { USER_ROLES } from "@/types/auth";
-import type { UserRole, User, Session } from "@/types/auth";
+import { cookies } from 'next/headers'
+import { revalidatePath } from 'next/cache'
+import { 
+  hashPassword, 
+  comparePasswords, 
+  createSessionToken,
+  getSessionCookieOptions,
+  getUserFromSession
+} from '@/lib/auth'
+import type { SignInData, SignUpData, AuthResponse, Session, UserRole } from '@/types/auth'
+import { prisma } from '@/lib/prisma'
+import { USER_ROLES } from '@/types/auth'
 
-interface SignUpData {
-  email: string;
-  password: string;
-  name: string;
-  role: UserRole; // Change to UserRole type
-  companyName?: string;
-  companyAddress?: string;
-  contactNumber?: string;
-}
-
-interface SignInData {
-  email: string;
-  password: string;
-}
-
-export async function signUp(data: SignUpData) {
+export async function signUp(data: SignUpData): Promise<AuthResponse> {
   try {
-    // Check if user already exists
+    console.log('SignUp data received:', data); // Debug log
+
     const existingUser = await prisma.user.findUnique({
       where: { email: data.email },
     });
 
     if (existingUser) {
-      return { error: "Email already registered" };
+      return { success: false, error: "Email already registered" };
     }
 
     const hashedPassword = await hashPassword(data.password);
 
-    // Create user with proper role validation
-    const user = await prisma.user.create({
-      data: {
-        email: data.email,
-        name: data.name,
-        password: hashedPassword,
-        role: data.role,
-        companyName: data.companyName,
-        companyAddress: data.companyAddress,
-        contactNumber: data.contactNumber,
-      },
+    // Log validation before transaction
+    console.log('Starting user creation with role:', data.role);
+
+    // Create user with transaction to handle related records
+    const result = await prisma.$transaction(async (tx) => {
+      // Create user
+      const user = await tx.user.create({
+        data: {
+          email: data.email,
+          name: data.name,
+          password: hashedPassword,
+          role: data.role,
+          isActive: true,
+          profile: {
+            tin: data.tin,
+            brn: data.brn,
+            industryType: data.industryType
+          }
+        }
+      });
+
+      console.log('User created:', user); // Debug log
+
+      // Create client/broker specific records
+      if (data.role === USER_ROLES.CLIENT) {
+        const client = await tx.client.create({
+          data: {
+            userId: user.id,
+            type: 'IMPORTER',
+            name: data.name,
+            registeredName: data.companyName || data.name,
+            businessAddress: data.companyAddress || '',
+            contactPerson: data.name,
+            contactNumber: data.contactNumber || '',
+            email: data.email,
+            tinNumber: data.tin || '',
+            isActive: true,
+            taxSettings: {},
+            creditSettings: {}
+          }
+        });
+        console.log('Client record created:', client); // Debug log
+
+      } else if (data.role === USER_ROLES.BROKER) {
+        const broker = await tx.broker.create({
+          data: {
+            userId: user.id,
+            employeeId: `BR${Math.floor(Math.random() * 10000).toString().padStart(4, '0')}`,
+            designation: 'Customs Broker',
+            specialization: [],
+            isActive: true
+          }
+        });
+        console.log('Broker record created:', broker); // Debug log
+      }
+
+      return user;
     });
 
-    // Create session with proper UserRole type
-    const session = await createSession(user.id, user.role as UserRole);
+    // Create session token and set cookie
+    const token = await createSessionToken({
+      id: result.id,
+      email: result.email,
+      name: result.name,
+      role: result.role as UserRole,
+      isActive: result.isActive
+    });
 
-    // Set up initial client relationships if needed
-    if (data.role === USER_ROLES.BROKER || data.role === USER_ROLES.CLIENT) {
-      // You might want to create initial consignee/exporter records
-      // based on the company information provided
-      if (data.companyName) {
-        await prisma.consignee.create({
-          data: {
-            name: data.companyName,
-            registeredName: data.companyName,
-            businessAddress: data.companyAddress || "",
-            tin: "", // You might want to add these to SignUpData
-            brn: "",
-            contactPerson: data.name,
-            contactNumber: data.contactNumber || "",
-            email: data.email,
-            userId: user.id,
-          },
-        });
-      }
-    }
+    const cookieOptions = getSessionCookieOptions();
+    cookies().set({
+      name: cookieOptions.name,
+      value: token,
+      httpOnly: cookieOptions.httpOnly,
+      secure: cookieOptions.secure,
+      sameSite: cookieOptions.sameSite,
+      maxAge: cookieOptions.maxAge,
+      path: cookieOptions.path
+    });
+
+    const session = await getUserFromSession();
 
     revalidatePath("/admin/clients");
     revalidatePath("/admin/services/import");
 
-    return { success: true, user, session };
+    return { 
+      success: true,
+      user: {
+        id: result.id,
+        email: result.email,
+        name: result.name,
+        role: result.role,
+        isActive: result.isActive
+      }
+    };
   } catch (error) {
     console.error("SignUp error:", error);
-    return { error: "Failed to create account" };
+    return { success: false, error: "Failed to create account" };
   }
 }
 
-export async function signIn(data: SignInData) {
+export async function signIn(data: SignInData): Promise<AuthResponse> {
   try {
     const user = await prisma.user.findUnique({
-      where: { email: data.email },
-      include: {
-        consignees: {
-          take: 1, // Just to check if any exist
-        },
-        exporters: {
-          take: 1, // Just to check if any exist
-        },
-      },
+      where: { email: data.email }
     });
 
     if (!user) {
-      return { error: "Invalid credentials" };
+      return { success: false, error: 'Invalid credentials' };
     }
 
     const isValid = await comparePasswords(data.password, user.password);
-
     if (!isValid) {
-      return { error: "Invalid credentials" };
+      return { success: false, error: 'Invalid credentials' };
     }
 
-    const session = await createSession(user.id, user.role as UserRole);
-
-    return {
-      success: true,
-      session,
+    const token = await createSessionToken({
+      id: user.id,
+      email: user.email,
+      name: user.name,
       role: user.role,
-      hasClients: user.consignees.length > 0 || user.exporters.length > 0,
+      isActive: user.isActive
+    });
+
+    // Set cookie with proper await
+    const cookieStore = await cookies();
+    const cookieOptions = getSessionCookieOptions();
+    
+    // Create cookie response
+    await cookieStore.set({
+      name: cookieOptions.name,
+      value: token,
+      httpOnly: cookieOptions.httpOnly,
+      secure: cookieOptions.secure,
+      sameSite: cookieOptions.sameSite,
+      maxAge: cookieOptions.maxAge,
+      path: cookieOptions.path
+    });
+
+    const session = await getUserFromSession();
+    
+    return { 
+      success: true, 
+      session: session || undefined,
+      user: session?.user,
+      role: user.role
     };
   } catch (error) {
-    console.error("SignIn error:", error);
-    return { error: "Failed to sign in" };
+    console.error('SignIn error:', error);
+    return { success: false, error: 'An error occurred during sign in' };
   }
 }
 
-export async function validateSessionAction(): Promise<Session | null> {
+export async function signOut(): Promise<{ success: boolean; error?: string }> {
   try {
-    const session = await validateSession();
-    return session;
-  } catch (error) {
-    console.error("Session validation error:", error);
-    return null;
-  }
-}
-
-export async function signOutAction() {
-  try {
-    const cookieStore = await cookies();
-    // Use set with expired date to remove the cookie
-    cookieStore.set("session", "", {
+    const cookieOptions = getSessionCookieOptions();
+    cookies().set({
+      name: cookieOptions.name,
+      value: '',
       expires: new Date(0),
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      path: "/",
+      path: '/'
     });
 
     revalidatePath("/admin/clients");
@@ -161,7 +203,7 @@ export async function signOutAction() {
 export async function createInitialSuperAdmin() {
   try {
     const existingSuperAdmin = await prisma.user.findFirst({
-      where: { role: USER_ROLES.SUPERADMIN },
+      where: { role: USER_ROLES.SUPERADMIN }
     });
 
     if (existingSuperAdmin) {
@@ -175,8 +217,9 @@ export async function createInitialSuperAdmin() {
         email: "superadmin@clexcb.com",
         name: "Super Admin",
         password: hashedPassword,
-        role: USER_ROLES.SUPERADMIN as UserRole,
-      },
+        role: USER_ROLES.SUPERADMIN,
+        isActive: true
+      }
     });
 
     return { success: true };
@@ -189,16 +232,10 @@ export async function createInitialSuperAdmin() {
 // New helper function to check user permissions
 export async function checkUserPermissions(userId: string, entityId: string) {
   try {
+    // First check if user exists and get their role
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      include: {
-        consignees: {
-          where: { id: entityId },
-        },
-        exporters: {
-          where: { id: entityId },
-        },
-      },
+      select: { role: true }
     });
 
     if (!user) return false;
@@ -206,8 +243,33 @@ export async function checkUserPermissions(userId: string, entityId: string) {
     // Super admin has access to everything
     if (user.role === USER_ROLES.SUPERADMIN) return true;
 
-    // Check if the entity belongs to the user
-    return user.consignees.length > 0 || user.exporters.length > 0;
+    // For clients, check if they own the entity
+    if (user.role === USER_ROLES.CLIENT) {
+      const clientEntity = await prisma.client.findFirst({
+        where: {
+          AND: [
+            { userId: userId },
+            { id: entityId }
+          ]
+        }
+      });
+      return clientEntity !== null;
+    }
+
+    // For brokers, check if they own the entity
+    if (user.role === USER_ROLES.BROKER) {
+      const brokerEntity = await prisma.broker.findFirst({
+        where: {
+          AND: [
+            { userId: userId },
+            { id: entityId }
+          ]
+        }
+      });
+      return brokerEntity !== null;
+    }
+
+    return false;
   } catch (error) {
     console.error("Permission check error:", error);
     return false;

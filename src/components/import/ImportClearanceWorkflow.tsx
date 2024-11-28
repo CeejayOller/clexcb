@@ -19,7 +19,7 @@ import type { ImportWorkflowState } from '@/types/import/state';
 import ModernWorkflowLayout from './layout/ModernWorkflowLayout';
 import ClientDetailsForm from './forms/ClientDetailsForm';
 import WorkflowEditDialog from './dialogs/WorkflowEditDialog';
-import { useAuth } from '@/components/layout/AuthProvider';
+import { useAuth } from '@/components/providers/AuthProvider';
 import { checkUserPermissions } from '@/app/actions/auth'
 
 
